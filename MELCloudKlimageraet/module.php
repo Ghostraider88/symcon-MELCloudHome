@@ -69,15 +69,17 @@ class MELCloudKlimageraet extends IPSModuleStrict
         $this->MaintainVariable('ErrorCode', $this->Translate('Error code'), VARIABLETYPE_STRING, [], 18, true);
         $this->MaintainVariable('InStandbyMode', $this->Translate('Standby mode'), VARIABLETYPE_BOOLEAN, $this->switchPresentation(), 19, true);
         $this->MaintainVariable('FrostProtection', $this->Translate('Frost protection'), VARIABLETYPE_BOOLEAN, $this->switchPresentation(), 20, true);
-        $this->MaintainVariable('FrostProtectionMin', $this->Translate('Frost protection minimum'), VARIABLETYPE_FLOAT, $this->numericValuePresentation('temperature-low', ' °C', 1), 21, true);
-        $this->MaintainVariable('FrostProtectionMax', $this->Translate('Frost protection maximum'), VARIABLETYPE_FLOAT, $this->numericValuePresentation('temperature-low', ' °C', 1), 22, true);
+        // Die aktuelle ATA-/context-Antwort liefert für diese Detailwerte keine
+        // verwertbaren Daten; vorhandene Variablen werden beim ApplyChanges entfernt.
+        $this->MaintainVariable('FrostProtectionMin', '', VARIABLETYPE_FLOAT, [], 21, false);
+        $this->MaintainVariable('FrostProtectionMax', '', VARIABLETYPE_FLOAT, [], 22, false);
         $this->MaintainVariable('OverheatProtection', $this->Translate('Overheat protection'), VARIABLETYPE_BOOLEAN, $this->switchPresentation(), 23, true);
-        $this->MaintainVariable('OverheatProtectionMin', $this->Translate('Overheat protection minimum'), VARIABLETYPE_FLOAT, $this->numericValuePresentation('temperature-high', ' °C', 1), 24, true);
-        $this->MaintainVariable('OverheatProtectionMax', $this->Translate('Overheat protection maximum'), VARIABLETYPE_FLOAT, $this->numericValuePresentation('temperature-high', ' °C', 1), 25, true);
+        $this->MaintainVariable('OverheatProtectionMin', '', VARIABLETYPE_FLOAT, [], 24, false);
+        $this->MaintainVariable('OverheatProtectionMax', '', VARIABLETYPE_FLOAT, [], 25, false);
         $this->MaintainVariable('HolidayMode', $this->Translate('Holiday mode'), VARIABLETYPE_BOOLEAN, $this->switchPresentation(), 26, true);
         $this->MaintainVariable('HolidayModeActive', $this->Translate('Holiday mode active'), VARIABLETYPE_BOOLEAN, $this->switchPresentation(), 27, true);
-        $this->MaintainVariable('HolidayStart', $this->Translate('Holiday start'), VARIABLETYPE_STRING, [], 28, true);
-        $this->MaintainVariable('HolidayEnd', $this->Translate('Holiday end'), VARIABLETYPE_STRING, [], 29, true);
+        $this->MaintainVariable('HolidayStart', '', VARIABLETYPE_STRING, [], 28, false);
+        $this->MaintainVariable('HolidayEnd', '', VARIABLETYPE_STRING, [], 29, false);
 
         // Aktionen für steuerbare Variablen aktivieren
         foreach (['Power', 'Mode', 'SetTemperature', 'FanSpeed', 'VaneVertical', 'VaneHorizontal'] as $ident) {
@@ -588,30 +590,22 @@ class MELCloudKlimageraet extends IPSModuleStrict
     /** @param array<string,mixed> $buffer */
     private function updateProtectionVariables(array $buffer): void
     {
-        $this->updateProtection('FrostProtection', $buffer['FrostProtection'] ?? null, 'FrostProtectionMin', 'FrostProtectionMax');
-        $this->updateProtection('OverheatProtection', $buffer['OverheatProtection'] ?? null, 'OverheatProtectionMin', 'OverheatProtectionMax');
+        $this->updateProtection('FrostProtection', $buffer['FrostProtection'] ?? null);
+        $this->updateProtection('OverheatProtection', $buffer['OverheatProtection'] ?? null);
         $holiday = is_array($buffer['HolidayMode'] ?? null) ? $buffer['HolidayMode'] : [];
         if ($holiday !== []) {
             $this->SetValue('HolidayMode', (bool) ($holiday['enabled'] ?? false));
             $this->SetValue('HolidayModeActive', (bool) ($holiday['active'] ?? false));
-            $this->SetValue('HolidayStart', (string) ($holiday['start'] ?? ''));
-            $this->SetValue('HolidayEnd', (string) ($holiday['end'] ?? ''));
         }
     }
 
     /** @param array<string,mixed>|null $protection */
-    private function updateProtection(string $ident, ?array $protection, string $minIdent, string $maxIdent): void
+    private function updateProtection(string $ident, ?array $protection): void
     {
         if ($protection === null) {
             return;
         }
         $this->SetValue($ident, (bool) ($protection['active'] ?? $protection['enabled'] ?? false));
-        if (is_numeric($protection['min'] ?? null)) {
-            $this->SetValue($minIdent, (float) $protection['min']);
-        }
-        if (is_numeric($protection['max'] ?? null)) {
-            $this->SetValue($maxIdent, (float) $protection['max']);
-        }
     }
 
     private function modePresentation(): array

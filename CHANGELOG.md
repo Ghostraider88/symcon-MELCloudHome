@@ -1,5 +1,24 @@
 # Changelog
 
+## Build 38 - 2026-09-17
+- Connection: Energieverbrauch wird zusätzlich als persistenter kumulativer ATA-Zähler mit
+  Delta-Verarbeitung geführt. Die bestehende 24-Stunden-Anzeige `EnergyConsumed` bleibt
+  unverändert. Korrupte oder rückläufige Einzelwerte werden nicht angerechnet.
+- Connection: Außentemperatur wird stündlich aus einem 48-Stunden-Fenster gelesen. Der letzte
+  echte Messzeitpunkt und eine Veraltet-Kennzeichnung werden an die Geräteinstanz übertragen.
+- Connection: Statusabrufe tolerieren zwei aufeinanderfolgende Fehler, verwenden Backoff und
+  unterscheiden Authentifizierung, Rate-Limit, Netzwerk- und Serverfehler. Requests werden
+  global gebremst und Token-Erneuerungen synchronisiert.
+- Klimagerät: Tatsächliche Lüfterstufe, Fehlercode, Standby, Frostschutz, Überhitzungsschutz
+  und Urlaubsmodus werden lesend angezeigt. Betriebsarten, Lüfterstufen, Lamellen und
+  Temperatur-Schrittweite berücksichtigen die Geräteeigenschaften.
+- Klimagerät: Nicht befüllte Schutz-Detailvariablen (Frostschutz-/Überhitzungsgrenzen sowie
+  Urlaubsbeginn/-ende) werden aus bestehenden Instanzen entfernt; die Hauptstatusvariablen
+  bleiben erhalten.
+- Tests/Dokumentation: Redigierte ATA-Fixtures, Parser-Tests und ein dokumentierter
+  Energie-Migrationspfad ergänzt. ATW/Ecodan und ein produktiver WebSocket-Worker bleiben
+  außerhalb dieses Beta-Updates.
+
 ## Build 37 - 2026-07-02
 - Connection: Neues, eigenständiges Intervall für die Außentemperatur-Aktualisierung
   (bisher fest an das Energie-Intervall mit 30-Minuten-Minimum gekoppelt). Die

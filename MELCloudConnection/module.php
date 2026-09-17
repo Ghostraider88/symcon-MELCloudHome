@@ -111,7 +111,7 @@ class MELCloudConnection extends IPSModuleStrict
         $this->chunkedDebug('DiagnoseApi/context', (string) json_encode($this->redactSensitiveData($context), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
         // Felder, die normalizeUnit() bereits auswertet
-        $usedUnitKeys    = ['id', 'givenDisplayName', 'displayName', 'rssi', 'settings', 'isConnected', 'capabilities', 'timeZone', 'timezone', 'errorCode', 'frostProtection', 'overheatProtection', 'holidayMode'];
+        $usedUnitKeys    = ['id', 'givenDisplayName', 'displayName', 'rssi', 'settings', 'isConnected', 'isInError', 'capabilities', 'timeZone', 'timezone', 'errorCode', 'frostProtection', 'overheatProtection', 'holidayMode'];
         $usedSettingKeys = ['Power', 'OperationMode', 'SetTemperature', 'RoomTemperature', 'SetFanSpeed', 'ActualFanSpeed', 'VaneVerticalDirection', 'VaneHorizontalDirection', 'InStandbyMode', 'IsInError', 'ErrorCode', 'FrostProtection', 'OverheatProtection', 'HolidayMode'];
 
         $unusedUnitKeys    = [];
@@ -458,8 +458,9 @@ class MELCloudConnection extends IPSModuleStrict
     {
         $devices = [];
         foreach ($context['buildings'] ?? [] as $building) {
+            $buildingTimezone = $building['timezone'] ?? $building['timeZone'] ?? null;
             foreach ($building['airToAirUnits'] ?? [] as $unit) {
-                $normalized = $this->normalizeUnit($unit);
+                $normalized = $this->normalizeUnit($unit, is_string($buildingTimezone) ? $buildingTimezone : null);
                 if ($normalized !== null) {
                     $devices[] = $normalized;
                 }
@@ -469,7 +470,7 @@ class MELCloudConnection extends IPSModuleStrict
         return $devices;
     }
 
-    private function normalizeUnit(array $unit): ?array
+    private function normalizeUnit(array $unit, ?string $buildingTimezone = null): ?array
     {
         $unitID = $unit['id'] ?? null;
         if ($unitID === null) {
@@ -486,7 +487,12 @@ class MELCloudConnection extends IPSModuleStrict
 
         $power = isset($settings['Power']) ? strtolower((string) $settings['Power']) !== 'false' : false;
         $errorCode = $settings['ErrorCode'] ?? $unit['errorCode'] ?? null;
-        $isInError = isset($settings['IsInError']) && strtolower((string) $settings['IsInError']) !== 'false';
+        // MELCloud liefert isInError auf Geräteebene. Das ältere settings-Feld
+        // bleibt als Fallback erhalten, falls es bei einzelnen ATA-Modellen noch
+        // vorhanden ist.
+        $isInError = array_key_exists('isInError', $unit) && $unit['isInError'] !== null
+            ? $this->toBoolean($unit['isInError'])
+            : $this->toBoolean($settings['IsInError'] ?? false);
         if ($errorCode !== null && (string) $errorCode !== '' && (string) $errorCode !== '0') {
             $isInError = true;
         }
@@ -509,7 +515,7 @@ class MELCloudConnection extends IPSModuleStrict
             'InStandbyMode'           => isset($settings['InStandbyMode']) && strtolower((string) $settings['InStandbyMode']) !== 'false',
             'IsInError'               => $isInError,
             'ErrorCode'               => $errorCode,
-            'TimeZone'                => $unit['timeZone'] ?? $unit['timezone'] ?? 'Europe/Berlin',
+            'TimeZone'                => $this->resolveTimeZone($unit['timeZone'] ?? $unit['timezone'] ?? null, $buildingTimezone),
             'FrostProtection'         => $this->normalizeProtection($unit, $settings, ['frostProtection', 'FrostProtection']),
             'OverheatProtection'      => $this->normalizeProtection($unit, $settings, ['overheatProtection', 'OverheatProtection']),
             'HolidayMode'             => $this->normalizeProtection($unit, $settings, ['holidayMode', 'HolidayMode']),
@@ -676,7 +682,7 @@ class MELCloudConnection extends IPSModuleStrict
     }
 
     /** @param array<int,string> $keys @return array<string,mixed> */
-    private function normalizeProtection(array $unit, array $settings, array $keys): array
+    private function normalizeProtection(array $unit, array $settings, array $keys): ?array
     {
         $source = null;
         foreach ($keys as $key) {
@@ -690,16 +696,28 @@ class MELCloudConnection extends IPSModuleStrict
             }
         }
         if (!is_array($source)) {
-            return ['enabled' => false, 'active' => false, 'min' => null, 'max' => null, 'start' => null, 'end' => null];
+            return null;
         }
         return [
             'enabled' => $this->toBoolean($source['enabled'] ?? $source['isEnabled'] ?? false),
-            'active' => $this->toBoolean($source['active'] ?? $source['isActive'] ?? false),
-            'min' => is_numeric($source['minTemperature'] ?? $source['minimumTemperature'] ?? $source['min'] ?? null) ? (float) ($source['minTemperature'] ?? $source['minimumTemperature'] ?? $source['min']) : null,
-            'max' => is_numeric($source['maxTemperature'] ?? $source['maximumTemperature'] ?? $source['max'] ?? null) ? (float) ($source['maxTemperature'] ?? $source['maximumTemperature'] ?? $source['max']) : null,
-            'start' => $source['startDate'] ?? $source['start'] ?? null,
-            'end' => $source['endDate'] ?? $source['end'] ?? null
+            'active' => $this->toBoolean($source['active'] ?? $source['isActive'] ?? false)
         ];
+    }
+
+    private function resolveTimeZone(mixed $unitTimezone, ?string $buildingTimezone): string
+    {
+        foreach ([$unitTimezone, $buildingTimezone, 'Europe/Berlin'] as $candidate) {
+            if (!is_string($candidate) || trim($candidate) === '') {
+                continue;
+            }
+            try {
+                new DateTimeZone($candidate);
+                return $candidate;
+            } catch (Exception) {
+                // Ungültige Cloud-Zeitzone: nächste Fallback-Stufe prüfen.
+            }
+        }
+        return 'Europe/Berlin';
     }
 
     private function isOutdoorStale(string $unitID): bool

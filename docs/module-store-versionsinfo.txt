@@ -1,3 +1,20 @@
+1.0 build 38
+neu:
+- Persistenter kumulativer Energiezähler für ATA-Klimageräte ergänzt.
+- Zusätzliche ATA-Statusdaten: tatsächliche Lüfterstufe, Fehlercode, Standby,
+  Frostschutz, Überhitzungsschutz und Urlaubsmodus.
+
+korrigiert:
+- Außentemperatur auf stündliche Messwerte aus einem 48-Stunden-Fenster mit letzter
+  Messzeit und Veraltet-Kennzeichnung umgestellt.
+- Capability-basierte Betriebsarten, Lüfterstufen, Lamellen und Temperatur-Schrittweite.
+- Request-Pacing, Token-Erneuerung, Fehlerbehandlung und Backoff verbessert.
+
+geändert:
+- Energie-Migration, redigierte Diagnoseausgaben und ATA-Fixtures dokumentiert.
+- Nicht befüllte Schutz-Detailvariablen entfernt; die drei lesenden Hauptstatusvariablen
+  bleiben erhalten.
+
 1.0 build 37
 neu:
 - Eigenes Intervall für die Außentemperatur-Aktualisierung (Minuten, min. 5), unabhängig
@@ -54,35 +71,5 @@ korrigiert:
 korrigiert:
 - Verbleibende Legacy-Variablenprofile (Verbunden, WLAN-Signal, Energieverbrauch) durch
   Variable Presentations ersetzt.
-
-1.0 build 26
-korrigiert:
-- Außentemperatur-Abruf korrigiert (listenverpackte Cloud-Antwort wird jetzt richtig
-  ausgepackt).
-
-1.0 build 25
-neu:
-- Testknopf "Alle Daten abrufen" im Connection-Modul (ruft Status und Energie inkl.
-  Außentemperatur für alle Geräte ab).
-
-1.0 build 24
-korrigiert:
-- Temperaturverlauf (Farbverlauf) am Solltemperatur-Schieberegler wiederhergestellt.
-
-1.0 build 23
-korrigiert:
-- Legacy-Profil an der Raumtemperatur durch moderne Variable Presentation ersetzt.
-
-1.0 build 22
-korrigiert:
-- Solltemperatur-Schieberegler nach fehlgeschlagenem Zwischenschritt wieder repariert.
-
-1.0 build 21
-neu:
-- Außentemperatur-Statusvariable ergänzt.
-
-1.0 build 20
-korrigiert:
-- Zulässiger Bereich der Solltemperatur auf 16-31 °C korrigiert.
 
 Ältere Historie: siehe CHANGELOG.md im Repository.

@@ -35,8 +35,8 @@ statt klassischer Variablenprofile.
 | Tatsächliche Lüfterstufe | Wertedarstellung | vom Gerät gemeldete Ist-Lüfterstufe, getrennt von der Sollstufe |
 | Fehlercode | Text | vom Gerät gemeldeter Fehlercode |
 | Standby-Modus | Schalter | vom Gerät gemeldeter Standby-Zustand |
-| Frostschutz / Überhitzungsschutz | Schalter + Temperaturwerte | nur lesend aus `/context` |
-| Urlaubsmodus | Schalter + Start/Ende | nur lesend aus `/context` |
+| Frostschutz / Überhitzungsschutz | Schalter | nur lesend aus `/context` |
+| Urlaubsmodus | Schalter | nur lesend aus `/context` |
 
 ## Hinweise
 
