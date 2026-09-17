@@ -61,8 +61,16 @@ später Stable nach Symcon-Review).
 Solltemperatur (16–31 °C, 0,5 °C-Schritte), Lüftergeschwindigkeit (Automatik, 1–5),
 Lamelle vertikal und horizontal (Automatik, Stufen, Schwenken).
 
-**Anzeige:** Raumtemperatur, Außentemperatur, Betriebsstatus, Verbindungsstatus, Störung,
-WLAN-Signalstärke, Energieverbrauch.
+**Anzeige:** Raumtemperatur, Außentemperatur mit letzter Messzeit und Veraltet-Kennzeichnung,
+Betriebsstatus, Verbindungsstatus, Störung und Fehlercode, WLAN-Signalstärke, tatsächliche
+Lüfterstufe, Standby, Frost-/Überhitzungsschutz, Urlaubsmodus sowie gleitender und kumulativer
+Energieverbrauch. Schutzmodi werden ausschließlich gelesen.
+
+Die Details zur Energie-Migration stehen in
+[`docs/ATA_MIGRATION.md`](docs/ATA_MIGRATION.md). Der aktuelle Stand zur technischen
+Live-Sync-Prüfung ist in [`docs/LIVE_SYNC_PROTOTYPE.md`](docs/LIVE_SYNC_PROTOTYPE.md)
+dokumentiert. Ein produktiver WebSocket-Worker ist bewusst noch nicht aktiviert; Polling bleibt
+der Fallback.
 
 ## 5. Überblick
 

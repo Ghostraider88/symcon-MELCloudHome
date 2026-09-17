@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/MELCloudDataTools.php';
+
 /**
  * MELCloud Connection (Splitter)
  *
@@ -37,6 +39,11 @@ class MELCloudConnection extends IPSModuleStrict
         $this->RegisterAttributeString('AccessToken', '');
         $this->RegisterAttributeString('RefreshToken', '');
         $this->RegisterAttributeInteger('TokenExpiry', 0);
+        $this->RegisterAttributeString('EnergyState', '{}');
+        $this->RegisterAttributeString('LastHttpRequestAt', '0');
+        $this->RegisterAttributeInteger('StatusFailureCount', 0);
+        $this->RegisterAttributeString('UnitTimeZones', '{}');
+        $this->RegisterAttributeString('OutdoorReadings', '{}');
 
         $this->RegisterTimer('UpdateStatus', 0, 'MELC_UpdateStatus($_IPS[\'TARGET\']);');
         $this->RegisterTimer('UpdateEnergy', 0, 'MELC_UpdateEnergy($_IPS[\'TARGET\']);');
@@ -63,10 +70,8 @@ class MELCloudConnection extends IPSModuleStrict
         // Energieverbrauch – deutlich rate-limit-empfindlicher (bekannte 429-Fehler),
         // daher mindestens 30 Minuten.
         $energyInterval = max(30, $this->ReadPropertyInteger('EnergyInterval')) * 60 * 1000;
-        // Außentemperatur läuft über einen anderen Endpoint (trendsummary statt Energie-
-        // Telemetrie) und wird daher unabhängig konfiguriert – Untergrenze bewusst niedriger
-        // (5 Minuten), um testen zu können, ob dieser Endpoint andere Rate-Limits hat.
-        $outdoorTemperatureInterval = max(5, $this->ReadPropertyInteger('OutdoorTemperatureInterval')) * 60 * 1000;
+        // Der Report-Endpoint liefert stündliche Messwerte und ist rate-limit-empfindlich.
+        $outdoorTemperatureInterval = max(30, $this->ReadPropertyInteger('OutdoorTemperatureInterval')) * 60 * 1000;
         $this->SetTimerInterval('UpdateStatus', $statusInterval);
         $this->SetTimerInterval('UpdateEnergy', $energyInterval);
         $this->SetTimerInterval('UpdateOutdoorTemperature', $outdoorTemperatureInterval);
@@ -103,11 +108,11 @@ class MELCloudConnection extends IPSModuleStrict
             return;
         }
 
-        $this->chunkedDebug('DiagnoseApi/context', (string) json_encode($context, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $this->chunkedDebug('DiagnoseApi/context', (string) json_encode($this->redactSensitiveData($context), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
         // Felder, die normalizeUnit() bereits auswertet
-        $usedUnitKeys    = ['id', 'givenDisplayName', 'displayName', 'rssi', 'settings', 'isConnected', 'capabilities'];
-        $usedSettingKeys = ['Power', 'OperationMode', 'SetTemperature', 'RoomTemperature', 'SetFanSpeed', 'ActualFanSpeed', 'VaneVerticalDirection', 'VaneHorizontalDirection', 'InStandbyMode', 'IsInError'];
+        $usedUnitKeys    = ['id', 'givenDisplayName', 'displayName', 'rssi', 'settings', 'isConnected', 'capabilities', 'timeZone', 'timezone', 'errorCode', 'frostProtection', 'overheatProtection', 'holidayMode'];
+        $usedSettingKeys = ['Power', 'OperationMode', 'SetTemperature', 'RoomTemperature', 'SetFanSpeed', 'ActualFanSpeed', 'VaneVerticalDirection', 'VaneHorizontalDirection', 'InStandbyMode', 'IsInError', 'ErrorCode', 'FrostProtection', 'OverheatProtection', 'HolidayMode'];
 
         $unusedUnitKeys    = [];
         $unusedSettingKeys = [];
@@ -152,7 +157,7 @@ class MELCloudConnection extends IPSModuleStrict
                     'measure'  => 'cumulative_energy_consumed_since_last_upload'
                 ]);
                 $response = $this->apiRequest('GET', '/telemetry/telemetry/energy/' . rawurlencode($sampleUnit) . '?' . $query);
-                $this->chunkedDebug('DiagnoseApi/energy', $response);
+                $this->chunkedDebug('DiagnoseApi/energy', $this->redactSensitiveText($response));
                 $data = json_decode($response, true);
                 foreach ($data['measureData'] ?? [] as $measure) {
                     if (isset($measure['type'])) {
@@ -173,7 +178,7 @@ class MELCloudConnection extends IPSModuleStrict
                     'to'     => $now->format('Y-m-d\TH:i:s.0000000')
                 ]);
                 $response = $this->apiRequest('GET', '/report/v1/trendsummary?' . $query);
-                $this->chunkedDebug('DiagnoseApi/trendsummary', $response);
+                $this->chunkedDebug('DiagnoseApi/trendsummary', $this->redactSensitiveText($response));
                 $data = json_decode($response, true);
                 if (isset($data[0])) {
                     $data = $data[0];
@@ -234,12 +239,27 @@ class MELCloudConnection extends IPSModuleStrict
         try {
             $context = $this->fetchContext();
         } catch (Exception $e) {
-            $this->SendDebug(__FUNCTION__, 'Fehler: ' . $e->getMessage(), 0);
-            $this->SetStatus(201); // Verbindungsfehler
+            $failures = $this->ReadAttributeInteger('StatusFailureCount') + 1;
+            $this->WriteAttributeInteger('StatusFailureCount', $failures);
+            $this->SendDebug(__FUNCTION__, sprintf('Statusabruf %d fehlgeschlagen: %s', $failures, $e->getMessage()), 0);
+            $base = max(60, $this->ReadPropertyInteger('UpdateInterval'));
+            $backoff = min($base * (2 ** max(0, $failures - 1)), 900);
+            $this->SetTimerInterval('UpdateStatus', $backoff * 1000);
+            // Zwei Ausfälle werden toleriert; Kinder behalten ihre letzten gültigen Werte.
+            if ($failures >= 3) {
+                $this->SetStatus(201);
+            }
             return;
         }
 
+        $this->WriteAttributeInteger('StatusFailureCount', 0);
+        $this->SetTimerInterval('UpdateStatus', max(60, $this->ReadPropertyInteger('UpdateInterval')) * 1000);
         $devices = $this->extractDevices($context);
+        $timeZones = [];
+        foreach ($devices as $device) {
+            $timeZones[(string) $device['UnitID']] = (string) ($device['TimeZone'] ?? 'Europe/Berlin');
+        }
+        $this->WriteAttributeString('UnitTimeZones', (string) json_encode($timeZones));
         if ($this->GetStatus() != 102) {
             $this->SetStatus(102);
         }
@@ -279,7 +299,12 @@ class MELCloudConnection extends IPSModuleStrict
                 $this->SendDebug(__FUNCTION__, $unitID . ' Energie: ' . $e->getMessage(), 0);
                 continue;
             }
-            $this->sendToChild($unitID, ['EnergyConsumed' => $energy]);
+            if ($energy['hasData']) {
+                $this->sendToChild($unitID, [
+                    'EnergyConsumed' => $energy['rolling24hKWh'],
+                    'EnergyTotal' => $energy['totalKWh']
+                ]);
+            }
         }
     }
 
@@ -294,10 +319,25 @@ class MELCloudConnection extends IPSModuleStrict
                 $temp = $this->fetchOutdoorTemperature($unitID);
             } catch (Exception $e) {
                 $this->SendDebug(__FUNCTION__, $unitID . ' Außentemperatur: ' . $e->getMessage(), 0);
+                $this->sendToChild($unitID, ['OutdoorTemperatureStale' => $this->isOutdoorStale($unitID)]);
                 continue;
             }
             if ($temp !== null) {
-                $this->sendToChild($unitID, ['OutdoorTemperature' => $temp]);
+                $readings = json_decode($this->ReadAttributeString('OutdoorReadings'), true);
+                if (!is_array($readings)) {
+                    $readings = [];
+                }
+                $readings[$unitID] = $temp['recordedAt'];
+                $this->WriteAttributeString('OutdoorReadings', (string) json_encode($readings));
+                $this->sendToChild($unitID, [
+                    'OutdoorTemperature' => $temp['value'],
+                    'OutdoorTemperatureLastReading' => (new DateTimeImmutable('@' . $temp['recordedAt']))->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM),
+                    'OutdoorTemperatureStale' => (time() - $temp['recordedAt']) > 21600
+                ]);
+            } else {
+                // Den letzten Temperaturwert beibehalten, aber seine Aktualität
+                // auch bei einer leeren Antwort sichtbar machen.
+                $this->sendToChild($unitID, ['OutdoorTemperatureStale' => $this->isOutdoorStale($unitID)]);
             }
         }
     }
@@ -397,7 +437,7 @@ class MELCloudConnection extends IPSModuleStrict
     private function fetchContext(): array
     {
         $response = $this->apiRequest('GET', '/context');
-        $this->SendDebug('fetchContext', 'Rohe Antwort (1500 Zeichen): ' . substr($response, 0, 1500), 0);
+        $this->SendDebug('fetchContext', 'Rohe Antwort (redigiert, 1500 Zeichen): ' . substr($this->redactSensitiveText($response), 0, 1500), 0);
         $data = json_decode($response, true);
         if (!is_array($data)) {
             throw new Exception('Ungültige /context-Antwort');
@@ -445,18 +485,15 @@ class MELCloudConnection extends IPSModuleStrict
         }
 
         $power = isset($settings['Power']) ? strtolower((string) $settings['Power']) !== 'false' : false;
+        $errorCode = $settings['ErrorCode'] ?? $unit['errorCode'] ?? null;
+        $isInError = isset($settings['IsInError']) && strtolower((string) $settings['IsInError']) !== 'false';
+        if ($errorCode !== null && (string) $errorCode !== '' && (string) $errorCode !== '0') {
+            $isInError = true;
+        }
 
         // Pro Modus unterschiedlicher Solltemperatur-Bereich (z. B. Heizen bis 10 °C
         // möglich, Kühlen/Trocknen/Automatik meist erst ab 16 °C) – aus capabilities.
-        $capabilities = $unit['capabilities'] ?? [];
-        $tempCapabilities = [
-            'minTempCoolDry'   => $capabilities['minTempCoolDry'] ?? null,
-            'maxTempCoolDry'   => $capabilities['maxTempCoolDry'] ?? null,
-            'minTempHeat'      => $capabilities['minTempHeat'] ?? null,
-            'maxTempHeat'      => $capabilities['maxTempHeat'] ?? null,
-            'minTempAutomatic' => $capabilities['minTempAutomatic'] ?? null,
-            'maxTempAutomatic' => $capabilities['maxTempAutomatic'] ?? null
-        ];
+        $capabilities = is_array($unit['capabilities'] ?? null) ? $unit['capabilities'] : [];
 
         return [
             'UnitID'                  => (string) $unitID,
@@ -465,11 +502,17 @@ class MELCloudConnection extends IPSModuleStrict
             'OperationMode'           => $settings['OperationMode'] ?? null,
             'SetTemperature'          => isset($settings['SetTemperature']) ? (float) $settings['SetTemperature'] : null,
             'RoomTemperature'         => isset($settings['RoomTemperature']) ? (float) $settings['RoomTemperature'] : null,
-            'SetFanSpeed'             => $settings['SetFanSpeed'] ?? $settings['ActualFanSpeed'] ?? null,
+            'SetFanSpeed'             => $settings['SetFanSpeed'] ?? null,
+            'ActualFanSpeed'          => $settings['ActualFanSpeed'] ?? null,
             'VaneVerticalDirection'   => $settings['VaneVerticalDirection'] ?? null,
             'VaneHorizontalDirection' => $settings['VaneHorizontalDirection'] ?? null,
             'InStandbyMode'           => isset($settings['InStandbyMode']) && strtolower((string) $settings['InStandbyMode']) !== 'false',
-            'IsInError'               => isset($settings['IsInError']) && strtolower((string) $settings['IsInError']) !== 'false',
+            'IsInError'               => $isInError,
+            'ErrorCode'               => $errorCode,
+            'TimeZone'                => $unit['timeZone'] ?? $unit['timezone'] ?? 'Europe/Berlin',
+            'FrostProtection'         => $this->normalizeProtection($unit, $settings, ['frostProtection', 'FrostProtection']),
+            'OverheatProtection'      => $this->normalizeProtection($unit, $settings, ['overheatProtection', 'OverheatProtection']),
+            'HolidayMode'             => $this->normalizeProtection($unit, $settings, ['holidayMode', 'HolidayMode']),
             // rssi liegt auf Geräte-Ebene, nicht im settings-Array (bestätigt über
             // andrew-blake/melcloudhome: AirToAirUnit.rssi <- data.get("rssi")).
             'rssi'                    => isset($unit['rssi']) ? (int) $unit['rssi'] : null,
@@ -477,7 +520,7 @@ class MELCloudConnection extends IPSModuleStrict
             // Cloud-Antwort weg, wird es in extractDevices() ohnehin nicht mehr gemeldet –
             // hier geht es um den tatsächlichen WLAN-/Cloud-Verbindungsstatus des Geräts.
             'Connected'               => !isset($unit['isConnected']) || (bool) $unit['isConnected'],
-            'Capabilities'            => $tempCapabilities
+            'Capabilities'            => $capabilities
         ];
     }
 
@@ -511,10 +554,10 @@ class MELCloudConnection extends IPSModuleStrict
     /**
      * Holt den (kumulierten) Energieverbrauch eines Geräts in kWh (letzte 24h, stündlich).
      */
-    private function fetchEnergy(string $unitID): float
+    private function fetchEnergy(string $unitID): array
     {
         $now  = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $from = $now->modify('-1 day');
+        $from = $now->modify('-2 days');
         $query = http_build_query([
             'from'     => $from->format('Y-m-d H:i'),
             'to'       => $now->format('Y-m-d H:i'),
@@ -527,62 +570,66 @@ class MELCloudConnection extends IPSModuleStrict
 
         // Antwortstruktur: measureData -> values -> [{ value }]. Die Werte kommen in Wh
         // (bestätigt über andrew-blake/melcloudhome), nicht in kWh – daher /1000.
-        $sumWh = 0.0;
-        if (isset($data['measureData']) && is_array($data['measureData'])) {
-            foreach ($data['measureData'] as $measure) {
-                if (isset($measure['values']) && is_array($measure['values'])) {
-                    foreach ($measure['values'] as $entry) {
-                        if (isset($entry['value']) && is_numeric($entry['value'])) {
-                            $sumWh += (float) $entry['value'];
-                        }
-                    }
-                }
-            }
+        if (!is_array($data)) {
+            throw new Exception('Ungültige Energie-Antwort');
         }
-        return $sumWh / 1000;
+        $entries = MELCloudDataTools::parseEnergyEntries($data, $now);
+        if ($entries === []) {
+            $this->SendDebug(__FUNCTION__, $unitID . ' keine gültigen Messwerte', 0);
+            return ['hasData' => false, 'rolling24hKWh' => 0.0, 'totalKWh' => 0.0];
+        }
+        $allState = json_decode($this->ReadAttributeString('EnergyState'), true);
+        if (!is_array($allState)) {
+            $allState = [];
+        }
+        $updated = MELCloudDataTools::updateEnergyState($allState[$unitID] ?? [], $entries, $now->getTimestamp());
+        $allState[$unitID] = $updated['state'];
+        $this->WriteAttributeString('EnergyState', (string) json_encode($allState));
+        if ($updated['rejected'] > 0) {
+            $this->SendDebug(__FUNCTION__, $unitID . ' rückläufige Einzelwerte verworfen: ' . $updated['rejected'], 0);
+        }
+        $this->SendDebug(__FUNCTION__, sprintf('%s: 24h=%.3f kWh, kumulativ=%.3f kWh, Delta=%.3f kWh', $unitID, $updated['rolling24hKWh'], $updated['state']['totalKWh'], $updated['deltaKWh']), 0);
+        return [
+            'hasData' => true,
+            'rolling24hKWh' => $updated['rolling24hKWh'],
+            'totalKWh' => $updated['state']['totalKWh']
+        ];
     }
 
     /**
      * Holt die Außentemperatur eines Geräts über den trendsummary-Endpunkt.
      * Gibt null zurück, wenn das Gerät keinen Außensensor hat oder keine Daten vorliegen.
      */
-    private function fetchOutdoorTemperature(string $unitID): ?float
+    private function fetchOutdoorTemperature(string $unitID): ?array
     {
         $now  = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-        $from = $now->modify('-1 day');
+        $from = $now->modify('-2 days');
         $query = http_build_query([
             'unitId' => $unitID,
-            'period' => 'Daily',
-            'from'   => $from->format('Y-m-d\TH:i:s.0000000'),
-            'to'     => $now->format('Y-m-d\TH:i:s.0000000')
+            'period' => 'Hourly',
+            'from'   => $from->format('Y-m-d\TH:i:s.0000000\Z'),
+            'to'     => $now->format('Y-m-d\TH:i:s.0000000\Z')
         ]);
 
         $response = $this->apiRequest('GET', '/report/v1/trendsummary?' . $query);
-        $this->SendDebug('fetchOutdoorTemperature', $unitID . ' Antwort (300 Zeichen): ' . substr($response, 0, 300), 0);
+        $this->SendDebug('fetchOutdoorTemperature', $unitID . ' Antwort (redigiert, 300 Zeichen): ' . substr($this->redactSensitiveText($response), 0, 300), 0);
         $data = json_decode($response, true);
 
-        // Mobile BFF liefert die Antwort in einer Liste verpackt
-        if (isset($data[0])) {
+        // Mobile BFF liefert die Antwort teilweise als Ein-Element-Liste.
+        if (is_array($data) && isset($data[0]) && is_array($data[0])) {
             $data = $data[0];
         }
-
         if (!is_array($data) || !isset($data['datasets']) || !is_array($data['datasets'])) {
             $this->SendDebug('fetchOutdoorTemperature', $unitID . ' kein datasets-Feld', 0);
             return null;
         }
 
-        foreach ($data['datasets'] as $dataset) {
-            $label = (string) ($dataset['label'] ?? '');
-            if (stripos($label, 'OUTDOOR_TEMPERATURE') !== false) {
-                $points = $dataset['data'] ?? [];
-                if (!empty($points)) {
-                    $last = end($points);
-                    if (isset($last['y']) && is_numeric($last['y'])) {
-                        $this->SendDebug('fetchOutdoorTemperature', $unitID . ' = ' . $last['y'] . ' °C', 0);
-                        return (float) $last['y'];
-                    }
-                }
-            }
+        $zones = json_decode($this->ReadAttributeString('UnitTimeZones'), true);
+        $timezone = is_array($zones) ? (string) ($zones[$unitID] ?? 'Europe/Berlin') : 'Europe/Berlin';
+        $reading = MELCloudDataTools::parseOutdoorReading($data, $timezone, $now->getTimestamp());
+        if ($reading !== null) {
+            $this->SendDebug('fetchOutdoorTemperature', $unitID . ' = ' . $reading['value'] . ' °C, Messzeit ' . gmdate(DATE_ATOM, $reading['recordedAt']), 0);
+            return $reading;
         }
 
         $labels = implode(', ', array_map(fn($d) => $d['label'] ?? '?', $data['datasets']));
@@ -600,6 +647,74 @@ class MELCloudConnection extends IPSModuleStrict
         foreach ($chunks as $i => $chunk) {
             $this->SendDebug($sender . ' (' . ($i + 1) . '/' . count($chunks) . ')', $chunk, 0);
         }
+    }
+
+    /** @return array<string,mixed> */
+    private function redactSensitiveData(array $data): array
+    {
+        $result = [];
+        foreach ($data as $key => $value) {
+            $lower = strtolower((string) $key);
+            if (in_array($lower, ['email', 'password', 'accesstoken', 'refreshtoken', 'token', 'authorization', 'givendisplayname', 'displayname', 'address', 'firstname', 'lastname', 'username'], true)) {
+                $result[$key] = '[redacted]';
+            } elseif (is_array($value)) {
+                $result[$key] = $this->redactSensitiveData($value);
+            } else {
+                $result[$key] = $value;
+            }
+        }
+        return $result;
+    }
+
+    private function redactSensitiveText(string $text): string
+    {
+        $decoded = json_decode($text, true);
+        if (is_array($decoded)) {
+            return (string) json_encode($this->redactSensitiveData($decoded), JSON_UNESCAPED_UNICODE);
+        }
+        return preg_replace('/(Bearer\s+)[A-Za-z0-9._\-]+/i', '$1[redacted]', $text) ?? $text;
+    }
+
+    /** @param array<int,string> $keys @return array<string,mixed> */
+    private function normalizeProtection(array $unit, array $settings, array $keys): array
+    {
+        $source = null;
+        foreach ($keys as $key) {
+            if (is_array($unit[$key] ?? null)) {
+                $source = $unit[$key];
+                break;
+            }
+            if (is_array($settings[$key] ?? null)) {
+                $source = $settings[$key];
+                break;
+            }
+        }
+        if (!is_array($source)) {
+            return ['enabled' => false, 'active' => false, 'min' => null, 'max' => null, 'start' => null, 'end' => null];
+        }
+        return [
+            'enabled' => $this->toBoolean($source['enabled'] ?? $source['isEnabled'] ?? false),
+            'active' => $this->toBoolean($source['active'] ?? $source['isActive'] ?? false),
+            'min' => is_numeric($source['minTemperature'] ?? $source['minimumTemperature'] ?? $source['min'] ?? null) ? (float) ($source['minTemperature'] ?? $source['minimumTemperature'] ?? $source['min']) : null,
+            'max' => is_numeric($source['maxTemperature'] ?? $source['maximumTemperature'] ?? $source['max'] ?? null) ? (float) ($source['maxTemperature'] ?? $source['maximumTemperature'] ?? $source['max']) : null,
+            'start' => $source['startDate'] ?? $source['start'] ?? null,
+            'end' => $source['endDate'] ?? $source['end'] ?? null
+        ];
+    }
+
+    private function isOutdoorStale(string $unitID): bool
+    {
+        $readings = json_decode($this->ReadAttributeString('OutdoorReadings'), true);
+        $last = is_array($readings) ? (int) ($readings[$unitID] ?? 0) : 0;
+        return $last <= 0 || (time() - $last) > 21600;
+    }
+
+    private function toBoolean(mixed $value): bool
+    {
+        if (is_string($value)) {
+            return !in_array(strtolower(trim($value)), ['false', '0', 'no', ''], true);
+        }
+        return (bool) $value;
     }
 
     /**
@@ -626,12 +741,24 @@ class MELCloudConnection extends IPSModuleStrict
         if ($status === 401) {
             // Token erneuern und einmal wiederholen
             $token = $this->getAccessToken(true);
+            if ($token === '') {
+                throw new Exception('Authentifizierung abgelehnt (HTTP 401)');
+            }
             $headers[0] = 'Authorization: Bearer ' . $token;
             [$status, $response] = $this->httpRequest($method, self::API_BASE_URL . $path, $headers, $body === null ? null : json_encode($body));
         }
 
         if ($status < 200 || $status >= 300) {
-            throw new Exception(sprintf('HTTP %d bei %s %s', $status, $method, $path));
+            if ($status === 401) {
+                throw new Exception('Authentifizierung abgelehnt (HTTP 401)');
+            }
+            if ($status === 429) {
+                throw new Exception('MELCloud Rate-Limit erreicht (HTTP 429)');
+            }
+            if ($status >= 500) {
+                throw new Exception('MELCloud-Serverfehler (HTTP ' . $status . ')');
+            }
+            throw new Exception(sprintf('MELCloud-API-Fehler HTTP %d bei %s %s', $status, $method, $path));
         }
 
         return $response;
@@ -645,6 +772,19 @@ class MELCloudConnection extends IPSModuleStrict
      * Liefert ein gültiges Access-Token (refresht/loggt bei Bedarf neu ein).
      */
     private function getAccessToken(bool $forceRefresh = false): string
+    {
+        $semaphore = 'MELCloudConnectionAuth_' . $this->InstanceID;
+        if (!IPS_SemaphoreEnter($semaphore, 1000)) {
+            throw new Exception('Token-Erneuerung bereits aktiv');
+        }
+        try {
+            return $this->getAccessTokenUnlocked($forceRefresh);
+        } finally {
+            IPS_SemaphoreLeave($semaphore);
+        }
+    }
+
+    private function getAccessTokenUnlocked(bool $forceRefresh = false): string
     {
         $now    = time();
         $access = $this->ReadAttributeString('AccessToken');
@@ -697,6 +837,12 @@ class MELCloudConnection extends IPSModuleStrict
         );
 
         if ($status !== 200) {
+            if ($status === 429) {
+                throw new Exception('MELCloud Rate-Limit bei Token-Erneuerung (HTTP 429)');
+            }
+            if ($status >= 500) {
+                throw new Exception('MELCloud-Serverfehler bei Token-Erneuerung (HTTP ' . $status . ')');
+            }
             $this->SendDebug(__FUNCTION__, 'Refresh fehlgeschlagen: HTTP ' . $status, 0);
             return null;
         }
@@ -713,7 +859,7 @@ class MELCloudConnection extends IPSModuleStrict
         }
 
         $cookieJar = tempnam(sys_get_temp_dir(), 'melc_');
-        $this->SendDebug('login', 'Start – E-Mail: ' . $email, 0);
+        $this->SendDebug('login', 'Start – Zugangsdaten vorhanden', 0);
 
         try {
             // Schritt 1: PAR
@@ -792,7 +938,7 @@ class MELCloudConnection extends IPSModuleStrict
                 ]),
                 $cookieJar
             );
-            $this->SendDebug('login/5-Token', 'HTTP ' . $status . ' – Body: ' . substr($response, 0, 200), 0);
+            $this->SendDebug('login/5-Token', 'HTTP ' . $status . ' – Body: ' . substr($this->redactSensitiveText($response), 0, 200), 0);
             if ($status !== 200) {
                 throw new Exception('Token-Tausch fehlgeschlagen: HTTP ' . $status . ' – ' . substr($response, 0, 200));
             }
@@ -985,6 +1131,23 @@ class MELCloudConnection extends IPSModuleStrict
      */
     private function httpRequestRaw(string $method, string $url, array $headers, ?string $body = null, ?string $cookieJar = null, bool $followRedirects = false): array
     {
+        // Eine globale Pause gilt auch für OAuth- und Redirect-Requests. Damit
+        // vermeiden parallele Timer die bekannten MELCloud-429-Fehler.
+        $paceSemaphore = 'MELCloudConnectionRequestPacing_' . $this->InstanceID;
+        if (!IPS_SemaphoreEnter($paceSemaphore, 5000)) {
+            throw new Exception('HTTP-Request-Pause konnte nicht synchronisiert werden');
+        }
+        try {
+            $lastRequest = (float) $this->ReadAttributeString('LastHttpRequestAt');
+            $wait = 0.5 - (microtime(true) - $lastRequest);
+            if ($lastRequest > 0 && $wait > 0) {
+                usleep((int) round($wait * 1000000));
+            }
+            $this->WriteAttributeString('LastHttpRequestAt', (string) microtime(true));
+        } finally {
+            IPS_SemaphoreLeave($paceSemaphore);
+        }
+
         $ch = curl_init();
         curl_setopt_array($ch, [
             CURLOPT_URL            => $url,

@@ -27,8 +27,8 @@
         {
             "type": "NumberSpinner",
             "name": "OutdoorTemperatureInterval",
-            "caption": "Außentemperatur-Aktualisierung (Minuten, min. 5)",
-            "minimum": 5,
+            "caption": "Außentemperatur-Aktualisierung (Minuten, min. 30)",
+            "minimum": 30,
             "suffix": "min"
         }
     ],

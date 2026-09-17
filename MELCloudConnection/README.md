@@ -21,7 +21,7 @@ für die Klimageräte dient.
 | Passwort | Passwort des Kontos |
 | Status-Aktualisierung | Polling-Intervall für den Gerätestatus (Sekunden, min. 60) |
 | Energie-Aktualisierung | Polling-Intervall für den Energieverbrauch (Minuten, min. 30) |
-| Außentemperatur-Aktualisierung | Polling-Intervall für die Außentemperatur (Minuten, min. 5) |
+| Außentemperatur-Aktualisierung | Polling-Intervall für die Außentemperatur (Minuten, min. 30) |
 
 ## Hinweise
 
@@ -31,10 +31,9 @@ für die Klimageräte dient.
   ca. einer Minute sichtbar, ohne die Cloud aggressiv abzufragen (kein 10s/30s-Polling).
 - Energieverbrauch wird bewusst seltener (≥30 Minuten) abgefragt, da dieser Telemetrie-Endpunkt
   empfindlich auf häufige Abfragen reagiert (bekannte HTTP-429-Throttling-Fehler).
-- Die Außentemperatur läuft über einen anderen Endpoint (Trendsummary/Report statt Energie-
-  Telemetrie) und wird deshalb unabhängig konfiguriert – mit niedrigerer Untergrenze (5 Minuten),
-  um testen zu können, ob dieser Endpoint andere Rate-Limits hat als der Energie-Endpoint. Bei
-  wiederholten HTTP-429-Fehlern im Debug-Log das Intervall wieder erhöhen.
+- Die Außentemperatur läuft über den Trendsummary/Report-Endpoint mit `Hourly` und einem
+  48-Stunden-Fenster. Die letzte echte Messzeit und eine mögliche Veraltung werden an die
+  Geräteinstanz weitergegeben. Das Mindestintervall beträgt 30 Minuten.
 
 ## Aktionen
 
@@ -42,7 +41,7 @@ für die Klimageräte dient.
 - **Alle Daten abrufen** – löst einmalig einen sofortigen Status-, Energie- und
   Außentemperatur-Abruf für alle angelegten Geräte aus (nützlich zum Testen der Einrichtung).
 - **API-Diagnose ausführen** – ruft `/context`, den Energie- und den Trendsummary-Endpunkt für
-  ein Beispielgerät ab, loggt die vollständigen Rohantworten ins Debug und meldet, welche von
+  ein Beispielgerät ab, loggt redigierte Rohantworten ins Debug und meldet, welche von
   der Cloud gelieferten Felder aktuell nicht ausgewertet werden. Gedacht, um neue oder
   übersehene API-Felder zu finden.
 - **Konfigurator** – listet die Geräte des Kontos und legt daraus Geräte-Instanzen an.
