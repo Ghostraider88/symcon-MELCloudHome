@@ -56,9 +56,11 @@ class MELCloudConnection extends IPSModuleStrict
         $this->RegisterAttributeInteger('LiveSyncReconnectCount', 0);
         $this->RegisterAttributeInteger('LiveSyncParentStatus', 0);
 
-        $this->RegisterVariableString('LiveSyncStatus', 'Live-Sync Status', '~String', 90);
-        $this->RegisterVariableString('LiveSyncLastPush', 'Letztes Live-Update', '~String', 91);
-        $this->RegisterVariableInteger('LiveSyncReconnects', 'Live-Sync Reconnects', '', 92);
+        // Keine ~String-Profilreferenz verwenden: Das Profil ist nicht in jeder
+        // Symcon-Installation vorhanden. Eine leere Presentation ist portabel.
+        $this->RegisterVariableString('LiveSyncStatus', 'Live-Sync Status', [], 90);
+        $this->RegisterVariableString('LiveSyncLastPush', 'Letztes Live-Update', [], 91);
+        $this->RegisterVariableInteger('LiveSyncReconnects', 'Live-Sync Reconnects', [], 92);
 
         $this->RegisterTimer('UpdateStatus', 0, 'MELC_UpdateStatus($_IPS[\'TARGET\']);');
         $this->RegisterTimer('UpdateEnergy', 0, 'MELC_UpdateEnergy($_IPS[\'TARGET\']);');
