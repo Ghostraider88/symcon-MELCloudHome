@@ -36,6 +36,7 @@ class MELCloudKlimageraet extends IPSModuleStrict
         $this->RegisterPropertyString('UnitID', '');
         $this->RegisterAttributeString('Capabilities', '{}');
         $this->RegisterTimer('FlushControl', 0, 'MELA_FlushControl($_IPS[\'TARGET\']);');
+        $this->RegisterTimer('InitialRefresh', 0, 'MELA_TriggerImmediateRefresh($_IPS[\'TARGET\']);');
     }
 
     public function ApplyChanges(): void
@@ -91,17 +92,26 @@ class MELCloudKlimageraet extends IPSModuleStrict
         if ($unitID !== '') {
             $this->SetReceiveDataFilter('.*2FD07B1C-5822-48B2-B394-0000776DF537.*');
             $this->SetStatus(102);
-            $this->triggerImmediateRefresh();
+            // Beim Anlegen kann der Parent noch keine InstanceInterface besitzen.
+            // Der Abruf wird deshalb nach ApplyChanges verzögert ausgeführt.
+            $this->SetTimerInterval('InitialRefresh', 1000);
         } else {
             $this->SetReceiveDataFilter('(?!)'); // nichts empfangen, solange unkonfiguriert
             $this->SetStatus(104);
+            $this->SetTimerInterval('InitialRefresh', 0);
         }
     }
 
+    public function TriggerImmediateRefresh(): void
+    {
+        $this->SetTimerInterval('InitialRefresh', 0);
+        $this->triggerImmediateRefresh();
+    }
+
     /**
-     * Stößt direkt nach dem Anlegen/Speichern einen sofortigen Status-Poll am
-     * Connection-Splitter an, damit die Werte nicht erst auf den nächsten
-     * regulären Polling-Zyklus (bis zu 60s) warten müssen.
+     * Stößt nach dem Anlegen/Speichern einen Status-Poll am Connection-Splitter
+     * an, sobald der Parent vollständig aktiv ist. So müssen die Werte nicht
+     * erst auf den nächsten regulären Polling-Zyklus (bis zu 60s) warten.
      */
     private function triggerImmediateRefresh(): void
     {
@@ -110,6 +120,12 @@ class MELCloudKlimageraet extends IPSModuleStrict
         }
         $parentID = IPS_GetInstance($this->InstanceID)['ConnectionID'];
         if ($parentID === 0 || !IPS_InstanceExists($parentID)) {
+            return;
+        }
+        $parent = IPS_GetInstance($parentID);
+        if ((int) ($parent['InstanceStatus'] ?? 0) !== 102) {
+            $this->SendDebug(__FUNCTION__, 'Parent noch nicht aktiv; Initialabruf wird erneut versucht', 0);
+            $this->SetTimerInterval('InitialRefresh', 5000);
             return;
         }
         try {

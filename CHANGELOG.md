@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Klimagerät: Der erste Statusabruf nach dem Anlegen wird verzögert, bis der
+  Connection-Parent aktiv ist. Dadurch wird kein InstanceInterface-is-not-available-
+  Fehler mehr während der Instanzerstellung ausgelöst.
 - Connection: Optionalen ATA-Live-Sync über den nativen Symcon-WebSocket-Client
   ergänzt. MELCloud-Pushdaten lösen einen gedrosselten vollständigen /context-Abruf
   aus; Polling für Status, Energie und Außentemperatur bleibt aktiv.
