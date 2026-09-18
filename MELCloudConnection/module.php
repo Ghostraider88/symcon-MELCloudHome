@@ -182,7 +182,7 @@ class MELCloudConnection extends IPSModuleStrict
             $this->SetTimerInterval('LiveSyncConfigure', 30 * 60 * 1000);
         } catch (Exception $e) {
             $this->setLiveSyncStatus('Polling-Fallback');
-            $this->SendDebug(__FUNCTION__, 'WebSocket-Konfiguration fehlgeschlagen: ' . $e->getMessage(), 0);
+            $this->SendDebug(__FUNCTION__, 'WebSocket-Konfiguration fehlgeschlagen: ' . $this->safeExceptionForLog($e), 0);
             // Bei einem abgelaufenen Hash oder temporären MELCloud-Fehlern
             // nicht im Sekundentakt erneut anmelden.
             $retry = str_contains($e->getMessage(), 'Kein nativer Symcon-WebSocket-Client') ? 10 : 5 * 60;
@@ -224,7 +224,7 @@ class MELCloudConnection extends IPSModuleStrict
 
     /**
      * Ruft /context, den Energie- und den Trendsummary-Endpunkt für ein Beispielgerät ab,
-     * loggt die vollständigen Rohantworten ins Debug und meldet per Popup zusammengefasst,
+     * protokolliert ausschließlich sichere Antwort-Metadaten ins Debug und meldet per Popup zusammengefasst,
      * welche von der Cloud gelieferten Felder aktuell NICHT ausgewertet werden. Gedacht, um
      * neue/übersehene API-Felder (z. B. weitere Sensoren, Telemetrie-Kennzahlen) zu finden.
      */
@@ -233,11 +233,11 @@ class MELCloudConnection extends IPSModuleStrict
         try {
             $context = $this->fetchContext();
         } catch (Exception $e) {
-            echo $this->Translate('Error') . ': ' . $e->getMessage();
+            echo $this->Translate('Error') . ': ' . $this->safeExceptionForLog($e);
             return;
         }
 
-        $this->chunkedDebug('DiagnoseApi/context', (string) json_encode($this->redactSensitiveData($context), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+        $this->SendDebug('DiagnoseApi/context', 'Antwort empfangen; Top-Level-Keys: ' . implode(', ', array_keys($context)), 0);
 
         // Felder, die normalizeUnit() bereits auswertet
         $usedUnitKeys = ['id', 'givenDisplayName', 'displayName', 'rssi', 'settings', 'isConnected', 'isInError', 'capabilities', 'timeZone', 'timezone', 'errorCode', 'frostProtection', 'overheatProtection', 'holidayMode'];
@@ -286,7 +286,7 @@ class MELCloudConnection extends IPSModuleStrict
                     'measure'  => 'cumulative_energy_consumed_since_last_upload'
                 ]);
                 $response = $this->apiRequest('GET', '/telemetry/telemetry/energy/' . rawurlencode($sampleUnit) . '?' . $query);
-                $this->chunkedDebug('DiagnoseApi/energy', $this->redactSensitiveText($response));
+                $this->SendDebug('DiagnoseApi/energy', 'Antwort empfangen (Länge: ' . strlen($response) . ' Bytes)', 0);
                 $data = json_decode($response, true);
                 foreach ($data['measureData'] ?? [] as $measure) {
                     if (isset($measure['type'])) {
@@ -294,7 +294,7 @@ class MELCloudConnection extends IPSModuleStrict
                     }
                 }
             } catch (Exception $e) {
-                $this->SendDebug('DiagnoseApi/energy', 'Fehler: ' . $e->getMessage(), 0);
+                $this->SendDebug('DiagnoseApi/energy', 'Fehler: ' . $this->safeExceptionForLog($e), 0);
             }
 
             try {
@@ -307,7 +307,7 @@ class MELCloudConnection extends IPSModuleStrict
                     'to'     => $now->format('Y-m-d\TH:i:s.0000000')
                 ]);
                 $response = $this->apiRequest('GET', '/report/v1/trendsummary?' . $query);
-                $this->chunkedDebug('DiagnoseApi/trendsummary', $this->redactSensitiveText($response));
+                $this->SendDebug('DiagnoseApi/trendsummary', 'Antwort empfangen (Länge: ' . strlen($response) . ' Bytes)', 0);
                 $data = json_decode($response, true);
                 if (isset($data[0])) {
                     $data = $data[0];
@@ -316,7 +316,7 @@ class MELCloudConnection extends IPSModuleStrict
                     $trendLabels[] = (string) ($dataset['label'] ?? '?');
                 }
             } catch (Exception $e) {
-                $this->SendDebug('DiagnoseApi/trendsummary', 'Fehler: ' . $e->getMessage(), 0);
+                $this->SendDebug('DiagnoseApi/trendsummary', 'Fehler: ' . $this->safeExceptionForLog($e), 0);
             }
         }
 
@@ -333,7 +333,7 @@ class MELCloudConnection extends IPSModuleStrict
         }
         $summary[] = 'Telemetrie-Kennzahlen (Energie-Endpoint): ' . (empty($energyLabels) ? '(keine gefunden)' : implode(', ', array_unique($energyLabels)));
         $summary[] = 'Verfügbare Trend-Datasets (Report-Endpoint): ' . (empty($trendLabels) ? '(keine gefunden)' : implode(', ', array_unique($trendLabels)));
-        $summary[] = 'Vollständige Rohdaten stehen im Debug-Log (Präfix "DiagnoseApi/...").';
+        $summary[] = 'Debug-Logging enthält nur sichere Antwort-Metadaten.';
 
         $text = implode("\n", $summary);
         $this->SendDebug('DiagnoseApi/summary', $text, 0);
@@ -356,7 +356,7 @@ class MELCloudConnection extends IPSModuleStrict
             echo sprintf($this->Translate('Login successful. %d air conditioner(s) found.'), count($devices));
             $this->ReloadForm();
         } catch (Exception $e) {
-            echo $this->Translate('Error') . ': ' . $e->getMessage();
+            echo $this->Translate('Error') . ': ' . $this->safeExceptionForLog($e);
         }
     }
 
@@ -386,7 +386,7 @@ class MELCloudConnection extends IPSModuleStrict
             try {
                 $energy = $this->fetchEnergy($unitID);
             } catch (Exception $e) {
-                $this->SendDebug(__FUNCTION__, $unitID . ' Energie: ' . $e->getMessage(), 0);
+                $this->SendDebug(__FUNCTION__, $unitID . ' Energie: ' . $this->safeExceptionForLog($e), 0);
                 continue;
             }
             if ($energy['hasData']) {
@@ -408,7 +408,7 @@ class MELCloudConnection extends IPSModuleStrict
             try {
                 $temp = $this->fetchOutdoorTemperature($unitID);
             } catch (Exception $e) {
-                $this->SendDebug(__FUNCTION__, $unitID . ' Außentemperatur: ' . $e->getMessage(), 0);
+                $this->SendDebug(__FUNCTION__, $unitID . ' Außentemperatur: ' . $this->safeExceptionForLog($e), 0);
                 $this->sendToChild($unitID, ['OutdoorTemperatureStale'       => $this->isOutdoorStale($unitID)]);
                 continue;
             }
@@ -438,8 +438,6 @@ class MELCloudConnection extends IPSModuleStrict
 
     public function ForwardData(string $JSONString): string
     {
-        $this->SendDebug('ForwardData', 'Empfangen: ' . substr($JSONString, 0, 300), 0);
-
         $outer = json_decode($JSONString, true);
         $data = isset($outer['Buffer']) ? json_decode(hex2bin($outer['Buffer']), true) : null;
         if (!is_array($data) || !isset($data['UnitID'], $data['Control'])) {
@@ -455,8 +453,8 @@ class MELCloudConnection extends IPSModuleStrict
             // gesetzten Wert wieder mit dem alten Cloud-Stand überschreiben.
             return (string) json_encode(['success' => true]);
         } catch (Exception $e) {
-            $this->SendDebug(__FUNCTION__, 'Control-Fehler: ' . $e->getMessage(), 0);
-            return (string) json_encode(['success' => false, 'error' => $e->getMessage()]);
+            $this->SendDebug(__FUNCTION__, 'Control-Fehler: ' . $this->safeExceptionForLog($e), 0);
+            return (string) json_encode(['success' => false, 'error' => $this->safeExceptionForLog($e)]);
         }
     }
 
@@ -474,7 +472,7 @@ class MELCloudConnection extends IPSModuleStrict
             $devices = $this->extractDevices($context);
             return (string) json_encode($devices);
         } catch (Exception $e) {
-            $this->SendDebug(__FUNCTION__, $e->getMessage(), 0);
+            $this->SendDebug(__FUNCTION__, $this->safeExceptionForLog($e), 0);
             return '[]';
         }
     }
@@ -486,7 +484,7 @@ class MELCloudConnection extends IPSModuleStrict
         } catch (Exception $e) {
             $failures = $this->ReadAttributeInteger('StatusFailureCount') + 1;
             $this->WriteAttributeInteger('StatusFailureCount', $failures);
-            $this->SendDebug(__FUNCTION__, sprintf('Statusabruf %d fehlgeschlagen: %s', $failures, $e->getMessage()), 0);
+            $this->SendDebug(__FUNCTION__, sprintf('Statusabruf %d fehlgeschlagen: %s', $failures, $this->safeExceptionForLog($e)), 0);
             $base = max(60, $this->ReadPropertyInteger('UpdateInterval'));
             $backoff = min($base * (2 ** max(0, $failures - 1)), 900);
             $this->SetTimerInterval('UpdateStatus', $backoff * 1000);
@@ -580,7 +578,7 @@ class MELCloudConnection extends IPSModuleStrict
     private function fetchContext(): array
     {
         $response = $this->apiRequest('GET', '/context');
-        $this->SendDebug('fetchContext', 'Rohe Antwort (redigiert, 1500 Zeichen): ' . substr($this->redactSensitiveText($response), 0, 1500), 0);
+        $this->SendDebug('fetchContext', 'Antwort empfangen (Länge: ' . strlen($response) . ' Bytes)', 0);
         $data = json_decode($response, true);
         if (!is_array($data)) {
             throw new Exception('Ungültige /context-Antwort');
@@ -761,7 +759,7 @@ class MELCloudConnection extends IPSModuleStrict
         ]);
 
         $response = $this->apiRequest('GET', '/report/v1/trendsummary?' . $query);
-        $this->SendDebug('fetchOutdoorTemperature', $unitID . ' Antwort (redigiert, 300 Zeichen): ' . substr($this->redactSensitiveText($response), 0, 300), 0);
+        $this->SendDebug('fetchOutdoorTemperature', $unitID . ' Antwort empfangen (Länge: ' . strlen($response) . ' Bytes)', 0);
         $data = json_decode($response, true);
 
         // Mobile BFF liefert die Antwort teilweise als Ein-Element-Liste.
@@ -787,17 +785,6 @@ class MELCloudConnection extends IPSModuleStrict
     }
 
     /**
-     * Loggt langen Text (z. B. vollständige JSON-Rohantworten) in mehreren SendDebug-
-     * Aufrufen, da die Debug-Konsole einzelne Nachrichten sonst abschneidet.
-     */
-    private function chunkedDebug(string $sender, string $text, int $chunkSize = 3000): void
-    {
-        $chunks = str_split($text, $chunkSize) ?: [''];
-        foreach ($chunks as $i => $chunk) {
-            $this->SendDebug($sender . ' (' . ($i + 1) . '/' . count($chunks) . ')', $chunk, 0);
-        }
-    }
-
     /** @return array<string,mixed> */
     private function redactSensitiveData(array $data): array
     {
@@ -1063,7 +1050,7 @@ class MELCloudConnection extends IPSModuleStrict
             if ($status >= 500) {
                 throw new Exception('MELCloud-Serverfehler (HTTP ' . $status . ')');
             }
-            throw new Exception(sprintf('MELCloud-API-Fehler HTTP %d bei %s %s', $status, $method, $path));
+            throw new Exception(sprintf('MELCloud-API-Fehler HTTP %d bei %s %s', $status, $method, $this->safePathForLog($path)));
         }
 
         return $response;
@@ -1188,40 +1175,40 @@ class MELCloudConnection extends IPSModuleStrict
                 ]),
                 $cookieJar
             );
-            $this->SendDebug('login/1-PAR', 'HTTP ' . $status . ' – Body: ' . substr($response, 0, 300), 0);
+            $this->SendDebug('login/1-PAR', 'HTTP ' . $status . ' – Antwortlänge: ' . strlen($response) . ' Bytes', 0);
             if ($status !== 201 && $status !== 200) {
                 throw new Exception('PAR fehlgeschlagen: HTTP ' . $status);
             }
             $par = json_decode($response, true);
             if (!isset($par['request_uri'])) {
-                throw new Exception('PAR ohne request_uri – Antwort: ' . substr($response, 0, 200));
+                throw new Exception('PAR ohne request_uri');
             }
-            $this->SendDebug('login/1-PAR', 'request_uri: ' . $par['request_uri'], 0);
+            $this->SendDebug('login/1-PAR', 'request_uri erhalten: ' . (isset($par['request_uri']) ? 'ja' : 'nein'), 0);
 
             // Schritt 2: Authorize → Loginseite
             $authorizeUrl = self::AUTH_BASE_URL . '/connect/authorize?' . http_build_query([
                 'client_id'   => self::OAUTH_CLIENT_ID,
                 'request_uri' => $par['request_uri']
             ]);
-            $this->SendDebug('login/2-Authorize', 'URL: ' . $authorizeUrl, 0);
+            $this->SendDebug('login/2-Authorize', 'URL: ' . $this->safeUrlForLog($authorizeUrl), 0);
             $loginPage = $this->followToLoginPage($authorizeUrl, $cookieJar, $loginUrl);
-            $this->SendDebug('login/2-Authorize', 'Finale Login-URL: ' . $loginUrl, 0);
-            $this->SendDebug('login/2-Authorize', 'Seiteninhalt (500 Zeichen): ' . substr(strip_tags($loginPage), 0, 500), 0);
+            $this->SendDebug('login/2-Authorize', 'Finale Login-URL: ' . $this->safeUrlForLog($loginUrl), 0);
+            $this->SendDebug('login/2-Authorize', 'Loginseite empfangen (Länge: ' . strlen($loginPage) . ' Bytes)', 0);
             if ($loginUrl === '') {
-                throw new Exception('Cognito-Loginseite nicht erreicht – Seiteninhalt: ' . substr($loginPage, 0, 300));
+                throw new Exception('Cognito-Loginseite nicht erreicht');
             }
 
             // Schritt 3: CSRF
             $csrf = $this->extractCsrf($loginPage);
-            $this->SendDebug('login/3-CSRF', $csrf !== '' ? 'Gefunden: ' . substr($csrf, 0, 20) . '…' : 'NICHT gefunden – möglicherweise anderes CSRF-Feld', 0);
+            $this->SendDebug('login/3-CSRF', 'CSRF-Feld: ' . ($csrf !== '' ? 'gefunden' : 'nicht gefunden'), 0);
             if ($csrf === '') {
-                // Alle input-Felder im HTML loggen für Diagnose
+                // Anzahl der input-Felder für die Diagnose
                 preg_match_all('/<input[^>]+>/i', $loginPage, $inputs);
-                $this->SendDebug('login/3-CSRF', 'HTML-input-Felder: ' . implode(' | ', array_map(fn ($t) => strip_tags('<x ' . $t . '>'), array_slice($inputs[0], 0, 20))), 0);
+                $this->SendDebug('login/3-CSRF', 'Input-Felder erkannt: ' . count($inputs[0]), 0);
             }
 
             // Schritt 4: Zugangsdaten senden
-            $this->SendDebug('login/4-Submit', 'POST an: ' . $loginUrl . ' (CSRF: ' . ($csrf !== '' ? 'ja' : 'nein') . ')', 0);
+            $this->SendDebug('login/4-Submit', 'POST an: ' . $this->safeUrlForLog($loginUrl) . ' (CSRF: ' . ($csrf !== '' ? 'ja' : 'nein') . ')', 0);
             $code = $this->submitCredentials($loginUrl, $csrf, $email, $password, $cookieJar);
             $this->SendDebug('login/4-Submit', $code !== '' ? 'Auth-Code erhalten (Länge ' . strlen($code) . ')' : 'KEIN Auth-Code erhalten', 0);
             if ($code === '') {
@@ -1243,19 +1230,19 @@ class MELCloudConnection extends IPSModuleStrict
                 ]),
                 $cookieJar
             );
-            $this->SendDebug('login/5-Token', 'HTTP ' . $status . ' – Body: ' . substr($this->redactSensitiveText($response), 0, 200), 0);
+            $this->SendDebug('login/5-Token', 'HTTP ' . $status . ' – Antwortlänge: ' . strlen($response) . ' Bytes', 0);
             if ($status !== 200) {
-                throw new Exception('Token-Tausch fehlgeschlagen: HTTP ' . $status . ' – ' . substr($response, 0, 200));
+                throw new Exception('Token-Tausch fehlgeschlagen: HTTP ' . $status);
             }
             $tokens = json_decode($response, true);
             if (!isset($tokens['access_token'])) {
-                throw new Exception('Kein access_token in Antwort: ' . substr($response, 0, 200));
+                throw new Exception('Kein access_token in Antwort (HTTP ' . $status . ')');
             }
             $this->SendDebug('login/5-Token', 'Erfolgreich – Token-Typ: ' . ($tokens['token_type'] ?? '?') . ', gültig: ' . ($tokens['expires_in'] ?? '?') . 's', 0);
             return $tokens;
         } catch (Exception $e) {
-            $this->SendDebug('login', 'FEHLER: ' . $e->getMessage(), 0);
-            $this->LogMessage('MELCloud-Login fehlgeschlagen: ' . $e->getMessage(), KL_ERROR);
+            $this->SendDebug('login', 'FEHLER: ' . $this->safeExceptionForLog($e), 0);
+            $this->LogMessage('MELCloud-Login fehlgeschlagen: ' . $this->safeExceptionForLog($e), KL_ERROR);
             return null;
         } finally {
             if (is_string($cookieJar) && file_exists($cookieJar)) {
@@ -1270,9 +1257,9 @@ class MELCloudConnection extends IPSModuleStrict
     {
         $finalUrl = '';
         for ($hop = 0; $hop < 10; $hop++) {
-            $this->SendDebug('followToLoginPage', 'Hop ' . $hop . ': GET ' . $url, 0);
+            $this->SendDebug('followToLoginPage', 'Hop ' . $hop . ': GET ' . $this->safeUrlForLog($url), 0);
             [$status, $body, $location, $effectiveUrl] = $this->httpRequestRaw('GET', $url, ['User-Agent: ' . self::USER_AGENT], null, $cookieJar);
-            $this->SendDebug('followToLoginPage', 'Hop ' . $hop . ': HTTP ' . $status . ' – Location: ' . ($location ?: '(keine)') . ' – Body: ' . strlen($body) . ' Bytes', 0);
+            $this->SendDebug('followToLoginPage', 'Hop ' . $hop . ': HTTP ' . $status . ' – Location: ' . ($location !== '' ? $this->safeUrlForLog($location) : '(keine)') . ' – Antwortlänge: ' . strlen($body) . ' Bytes', 0);
 
             if ($location !== '') {
                 if (strpos($location, self::OAUTH_REDIRECT) === 0) {
@@ -1325,13 +1312,13 @@ class MELCloudConnection extends IPSModuleStrict
                 $headers[] = 'Content-Type: application/x-www-form-urlencoded';
             }
 
-            $this->SendDebug('submitCredentials', 'Hop ' . $hop . ': ' . $method . ' ' . $url, 0);
+            $this->SendDebug('submitCredentials', 'Hop ' . $hop . ': ' . $method . ' ' . $this->safeUrlForLog($url), 0);
             [$status, $body, $location] = $this->httpRequestRaw($method, $url, $headers, $data, $cookieJar);
-            $this->SendDebug('submitCredentials', 'Hop ' . $hop . ': HTTP ' . $status . ' – Location: ' . ($location ?: '(keine)') . ' – Body: ' . strlen($body) . ' Bytes', 0);
+            $this->SendDebug('submitCredentials', 'Hop ' . $hop . ': HTTP ' . $status . ' – Location: ' . ($location !== '' ? $this->safeUrlForLog($location) : '(keine)') . ' – Antwortlänge: ' . strlen($body) . ' Bytes', 0);
 
             if ($location !== '') {
                 if (strpos($location, self::OAUTH_REDIRECT) === 0) {
-                    $this->SendDebug('submitCredentials', 'Redirect-URL mit Auth-Code: ' . substr($location, 0, 120), 0);
+                    $this->SendDebug('submitCredentials', 'Redirect-URL mit Auth-Code: ' . $this->safeUrlForLog($location), 0);
                     return $this->extractCodeFromUrl($location);
                 }
                 $url = $this->resolveUrl($url, $location);
@@ -1341,7 +1328,7 @@ class MELCloudConnection extends IPSModuleStrict
             }
 
             // Kein Redirect – Body auf Code/Fehler prüfen
-            $this->SendDebug('submitCredentials', 'Kein Redirect – Body (400 Zeichen): ' . substr(strip_tags($body), 0, 400), 0);
+            $this->SendDebug('submitCredentials', 'Kein Redirect – Antwortlänge: ' . strlen($body) . ' Bytes', 0);
             $code = $this->extractCodeFromHtml($body);
             if ($code !== '') {
                 $this->SendDebug('submitCredentials', 'Auth-Code aus HTML-Body extrahiert', 0);
@@ -1351,7 +1338,7 @@ class MELCloudConnection extends IPSModuleStrict
             // JavaScript-Redirect-Seite: RedirectUri aus aktuellem URL-Parameter auslesen
             $nextUrl = $this->extractJsRedirect($body, $url);
             if ($nextUrl !== '') {
-                $this->SendDebug('submitCredentials', 'JS-Redirect folgen: ' . substr($nextUrl, 0, 150), 0);
+                $this->SendDebug('submitCredentials', 'JS-Redirect folgen: ' . $this->safeUrlForLog($nextUrl), 0);
                 $url = $nextUrl;
                 $method = 'GET';
                 $data = null;
@@ -1478,9 +1465,9 @@ class MELCloudConnection extends IPSModuleStrict
 
         $raw = curl_exec($ch);
         if ($raw === false) {
-            $error = curl_error($ch);
+            $errorCode = curl_errno($ch);
             curl_close($ch);
-            throw new Exception('cURL-Fehler: ' . $error);
+            throw new Exception('cURL-Fehler (Code ' . $errorCode . ')', $errorCode);
         }
 
         $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
@@ -1527,6 +1514,44 @@ class MELCloudConnection extends IPSModuleStrict
     /* -------------------------------------------------------------------------
      * Kleine Helfer
      * ---------------------------------------------------------------------- */
+
+    private function safeExceptionForLog(Throwable $exception): string
+    {
+        $class = get_class($exception);
+        $separator = strrpos($class, '\\');
+        if ($separator !== false) {
+            $class = substr($class, $separator + 1);
+        }
+        $parts = ['Fehlerklasse=' . $class];
+        if ($exception->getCode() !== 0) {
+            $parts[] = 'Code=' . $exception->getCode();
+        }
+        if (preg_match('/\bHTTP\s+([1-5]\d{2})\b/i', $exception->getMessage(), $match) === 1) {
+            $parts[] = 'HTTP ' . $match[1];
+        }
+        return implode(', ', $parts);
+    }
+
+    private function safeUrlForLog(string $url): string
+    {
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return '(ungültige URL)';
+        }
+        $scheme = isset($parts['scheme']) ? strtolower((string) $parts['scheme']) : '';
+        $host = isset($parts['host']) ? (string) $parts['host'] : '';
+        if ($host === '') {
+            return $scheme !== '' ? $scheme . '://' : $this->safePathForLog($url);
+        }
+        $path = (string) ($parts['path'] ?? '/');
+        return ($scheme !== '' ? $scheme . '://' : '') . $host . ($path !== '' ? $path : '/');
+    }
+
+    private function safePathForLog(string $path): string
+    {
+        $parsedPath = parse_url($path, PHP_URL_PATH);
+        return is_string($parsedPath) && $parsedPath !== '' ? $parsedPath : '/';
+    }
 
     private function base64Url(string $data): string
     {
