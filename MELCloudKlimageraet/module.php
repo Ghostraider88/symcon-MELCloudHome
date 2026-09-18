@@ -105,7 +105,7 @@ class MELCloudKlimageraet extends IPSModuleStrict
     public function TriggerImmediateRefresh(): void
     {
         $this->SetTimerInterval('InitialRefresh', 0);
-        $this->triggerImmediateRefresh();
+        $this->performImmediateRefresh();
     }
 
     /**
@@ -113,7 +113,7 @@ class MELCloudKlimageraet extends IPSModuleStrict
      * an, sobald der Parent vollständig aktiv ist. So müssen die Werte nicht
      * erst auf den nächsten regulären Polling-Zyklus (bis zu 60s) warten.
      */
-    private function triggerImmediateRefresh(): void
+    private function performImmediateRefresh(): void
     {
         if (IPS_GetKernelRunlevel() !== KR_READY) {
             return;
