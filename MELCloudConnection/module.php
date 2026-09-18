@@ -68,10 +68,6 @@ class MELCloudConnection extends IPSModuleStrict
         $this->RegisterTimer('LiveSyncConfigure', 0, 'MELC_ConfigureLiveSync($_IPS[\'TARGET\']);');
         $this->RegisterTimer('LiveSyncRefresh', 0, 'MELC_RefreshLiveSync($_IPS[\'TARGET\']);');
         $this->RegisterTimer('LiveSyncMonitor', 0, 'MELC_MonitorLiveSync($_IPS[\'TARGET\']);');
-
-        $this->SetValue('LiveSyncStatus', 'Deaktiviert');
-        $this->SetValue('LiveSyncLastPush', 'Nie');
-        $this->SetValue('LiveSyncReconnects', 0);
     }
 
     public function GetCompatibleParents(): string
@@ -89,6 +85,14 @@ class MELCloudConnection extends IPSModuleStrict
     public function ApplyChanges(): void
     {
         parent::ApplyChanges();
+
+        // Statuswerte erst nach Create()/Persistenz-Laden initialisieren.
+        // Während Create() besitzt die Instanz-Schnittstelle noch nicht
+        // zuverlässig den vollständigen Objektbaum.
+        if ($this->ReadAttributeInteger('LiveSyncLastPushAt') === 0) {
+            $this->SetValue('LiveSyncLastPush', 'Nie');
+        }
+        $this->SetValue('LiveSyncReconnects', $this->ReadAttributeInteger('LiveSyncReconnectCount'));
 
         if ($this->ReadPropertyString('Email') === '' || $this->ReadPropertyString('Password') === '') {
             $this->SetStatus(104); // inaktiv: Zugangsdaten fehlen
