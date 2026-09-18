@@ -14,8 +14,8 @@ class MELCloudKlimageraet extends IPSModuleStrict
     private const RX_TO_PARENT = '{7D0C324F-EF82-4716-A8A0-00006378D27F}';
 
     // int <-> API-String Zuordnungen
-    private const MODE_MAP   = [0 => 'Automatic', 1 => 'Heat', 2 => 'Cool', 3 => 'Dry', 4 => 'Fan'];
-    private const FAN_MAP    = [0 => 'Auto', 1 => 'One', 2 => 'Two', 3 => 'Three', 4 => 'Four', 5 => 'Five'];
+    private const MODE_MAP = [0 => 'Automatic', 1 => 'Heat', 2 => 'Cool', 3 => 'Dry', 4 => 'Fan'];
+    private const FAN_MAP = [0 => 'Auto', 1 => 'One', 2 => 'Two', 3 => 'Three', 4 => 'Four', 5 => 'Five'];
     private const VANE_V_MAP = [0 => 'Auto', 1 => 'One', 2 => 'Two', 3 => 'Three', 4 => 'Four', 5 => 'Five', 7 => 'Swing'];
     private const VANE_H_MAP = [0 => 'Auto', 1 => 'Left', 2 => 'LeftCentre', 3 => 'Centre', 4 => 'RightCentre', 5 => 'Right', 7 => 'Swing'];
 
@@ -106,33 +106,6 @@ class MELCloudKlimageraet extends IPSModuleStrict
     {
         $this->SetTimerInterval('InitialRefresh', 0);
         $this->performImmediateRefresh();
-    }
-
-    /**
-     * Stößt nach dem Anlegen/Speichern einen Status-Poll am Connection-Splitter
-     * an, sobald der Parent vollständig aktiv ist. So müssen die Werte nicht
-     * erst auf den nächsten regulären Polling-Zyklus (bis zu 60s) warten.
-     */
-    private function performImmediateRefresh(): void
-    {
-        if (IPS_GetKernelRunlevel() !== KR_READY) {
-            return;
-        }
-        $parentID = IPS_GetInstance($this->InstanceID)['ConnectionID'];
-        if ($parentID === 0 || !IPS_InstanceExists($parentID)) {
-            return;
-        }
-        $parent = IPS_GetInstance($parentID);
-        if ((int) ($parent['InstanceStatus'] ?? 0) !== 102) {
-            $this->SendDebug(__FUNCTION__, 'Parent noch nicht aktiv; Initialabruf wird erneut versucht', 0);
-            $this->SetTimerInterval('InitialRefresh', 5000);
-            return;
-        }
-        try {
-            MELC_UpdateStatus($parentID);
-        } catch (Exception $e) {
-            $this->SendDebug(__FUNCTION__, 'Sofort-Refresh fehlgeschlagen: ' . $e->getMessage(), 0);
-        }
     }
 
     /* -------------------------------------------------------------------------
@@ -338,6 +311,50 @@ class MELCloudKlimageraet extends IPSModuleStrict
     }
 
     /**
+     * Timer-Callback (MELA_FlushControl): sendet die zuletzt gesammelten Steuerfelder
+     * genau einmal als kombinierten Steuerbefehl an die Cloud, nachdem für
+     * CONTROL_DEBOUNCE_MS keine weitere Änderung mehr eingegangen ist.
+     */
+    public function FlushControl(): void
+    {
+        $this->SetTimerInterval('FlushControl', 0);
+
+        $pending = json_decode($this->GetBuffer('PendingControl'), true);
+        if (!is_array($pending) || $pending === []) {
+            return;
+        }
+        $this->SetBuffer('PendingControl', '');
+        $this->control($pending);
+    }
+
+    /**
+     * Stößt nach dem Anlegen/Speichern einen Status-Poll am Connection-Splitter
+     * an, sobald der Parent vollständig aktiv ist. So müssen die Werte nicht
+     * erst auf den nächsten regulären Polling-Zyklus (bis zu 60s) warten.
+     */
+    private function performImmediateRefresh(): void
+    {
+        if (IPS_GetKernelRunlevel() !== KR_READY) {
+            return;
+        }
+        $parentID = IPS_GetInstance($this->InstanceID)['ConnectionID'];
+        if ($parentID === 0 || !IPS_InstanceExists($parentID)) {
+            return;
+        }
+        $parent = IPS_GetInstance($parentID);
+        if ((int) ($parent['InstanceStatus'] ?? 0) !== 102) {
+            $this->SendDebug(__FUNCTION__, 'Parent noch nicht aktiv; Initialabruf wird erneut versucht', 0);
+            $this->SetTimerInterval('InitialRefresh', 5000);
+            return;
+        }
+        try {
+            MELC_UpdateStatus($parentID);
+        } catch (Exception $e) {
+            $this->SendDebug(__FUNCTION__, 'Sofort-Refresh fehlgeschlagen: ' . $e->getMessage(), 0);
+        }
+    }
+
+    /**
      * Puffert ein einzelnes Steuerfeld und (re-)startet den Sammel-Timer. Mehrere
      * Änderungen, die innerhalb von CONTROL_DEBOUNCE_MS eintreffen (z. B. alle Werte
      * einer Symcon-Szene), werden dadurch zu EINEM kombinierten Steuerbefehl
@@ -354,23 +371,6 @@ class MELCloudKlimageraet extends IPSModuleStrict
         $pending = array_merge($pending, $control);
         $this->SetBuffer('PendingControl', (string) json_encode($pending));
         $this->SetTimerInterval('FlushControl', self::CONTROL_DEBOUNCE_MS);
-    }
-
-    /**
-     * Timer-Callback (MELA_FlushControl): sendet die zuletzt gesammelten Steuerfelder
-     * genau einmal als kombinierten Steuerbefehl an die Cloud, nachdem für
-     * CONTROL_DEBOUNCE_MS keine weitere Änderung mehr eingegangen ist.
-     */
-    public function FlushControl(): void
-    {
-        $this->SetTimerInterval('FlushControl', 0);
-
-        $pending = json_decode($this->GetBuffer('PendingControl'), true);
-        if (!is_array($pending) || $pending === []) {
-            return;
-        }
-        $this->SetBuffer('PendingControl', '');
-        $this->control($pending);
     }
 
     /**
@@ -422,7 +422,7 @@ class MELCloudKlimageraet extends IPSModuleStrict
 
         $mode = (string) ($buffer['OperationMode'] ?? '');
         $room = is_numeric($buffer['RoomTemperature'] ?? null) ? (float) $buffer['RoomTemperature'] : null;
-        $set  = is_numeric($buffer['SetTemperature'] ?? null) ? (float) $buffer['SetTemperature'] : null;
+        $set = is_numeric($buffer['SetTemperature'] ?? null) ? (float) $buffer['SetTemperature'] : null;
 
         if ($room === null || $set === null) {
             switch ($mode) {
@@ -571,11 +571,11 @@ class MELCloudKlimageraet extends IPSModuleStrict
     {
         $caps = $this->capabilities();
         $keys = match ($mode) {
-            0 => ['hasAutoOperationMode', 'hasAutomaticMode', 'hasAutoMode', 'supportsAutomatic'],
-            1 => ['hasHeatOperationMode', 'hasHeatingMode', 'hasHeatMode', 'supportsHeating'],
-            2 => ['hasCoolOperationMode', 'hasCoolingMode', 'hasCoolMode', 'supportsCooling'],
-            3 => ['hasDryOperationMode', 'hasDryMode', 'supportsDry'],
-            4 => ['hasFanMode', 'supportsFan'],
+            0       => ['hasAutoOperationMode', 'hasAutomaticMode', 'hasAutoMode', 'supportsAutomatic'],
+            1       => ['hasHeatOperationMode', 'hasHeatingMode', 'hasHeatMode', 'supportsHeating'],
+            2       => ['hasCoolOperationMode', 'hasCoolingMode', 'hasCoolMode', 'supportsCooling'],
+            3       => ['hasDryOperationMode', 'hasDryMode', 'supportsDry'],
+            4       => ['hasFanMode', 'supportsFan'],
             default => []
         };
         return $keys !== [] ? $this->capabilityValue($caps, $keys, true) : false;
@@ -657,7 +657,7 @@ class MELCloudKlimageraet extends IPSModuleStrict
                 $result[] = array_slice($option, 0, 4);
             }
         }
-        return $this->enumerationPresentation($result !== [] ? $result : array_map(fn($o) => array_slice($o, 0, 4), $options));
+        return $this->enumerationPresentation($result !== [] ? $result : array_map(fn ($o) => array_slice($o, 0, 4), $options));
     }
 
     private function fanSpeedPresentation(): array
@@ -774,7 +774,7 @@ class MELCloudKlimageraet extends IPSModuleStrict
     {
         $values = [];
         foreach ($options as $option) {
-            $hasIcon  = $option[2] !== '';
+            $hasIcon = $option[2] !== '';
             $hasColor = $option[3] !== -1;
             $values[] = [
                 'Value'       => $option[0],

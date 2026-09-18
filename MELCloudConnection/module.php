@@ -15,19 +15,19 @@ require_once __DIR__ . '/MELCloudDataTools.php';
 class MELCloudConnection extends IPSModuleStrict
 {
     // OAuth / API Endpunkte (abgeleitet aus andrew-blake/melcloudhome)
-    private const AUTH_BASE_URL    = 'https://auth.melcloudhome.com';
-    private const API_BASE_URL     = 'https://mobile.bff.melcloudhome.com';
-    private const WS_TOKEN_URL     = 'https://6x2dgdulg7omjsxalnhmo4ynba0dcgwk.lambda-url.eu-west-1.on.aws/';
-    private const WS_URL            = 'wss://ws.melcloudhome.com/';
-    private const OAUTH_CLIENT_ID  = 'homemobile';
-    private const OAUTH_REDIRECT   = 'melcloudhome://';
-    private const OAUTH_SCOPES     = 'openid profile email offline_access IdentityServerApi';
-    private const USER_AGENT       = 'MonitorAndControl.App.Mobile/52 CFNetwork/3860.400.51 Darwin/25.3.0';
+    private const AUTH_BASE_URL = 'https://auth.melcloudhome.com';
+    private const API_BASE_URL = 'https://mobile.bff.melcloudhome.com';
+    private const WS_TOKEN_URL = 'https://6x2dgdulg7omjsxalnhmo4ynba0dcgwk.lambda-url.eu-west-1.on.aws/';
+    private const WS_URL = 'wss://ws.melcloudhome.com/';
+    private const OAUTH_CLIENT_ID = 'homemobile';
+    private const OAUTH_REDIRECT = 'melcloudhome://';
+    private const OAUTH_SCOPES = 'openid profile email offline_access IdentityServerApi';
+    private const USER_AGENT = 'MonitorAndControl.App.Mobile/52 CFNetwork/3860.400.51 Darwin/25.3.0';
 
     // Symcon-Datenfluss: natives WebSocket-I/O -> Connection
     private const WS_CLIENT_MODULE_ID = '{D68FD31F-0E90-7019-F16C-1949BD3079EF}';
-    private const SIMPLE_RX            = '{018EF6B5-AB94-40C6-AA53-46943E824ACF}';
-    private const SIMPLE_TX            = '{79827379-F36E-4ADA-8A95-5F8D1DC92FA9}';
+    private const SIMPLE_RX = '{018EF6B5-AB94-40C6-AA53-46943E824ACF}';
+    private const SIMPLE_TX = '{79827379-F36E-4ADA-8A95-5F8D1DC92FA9}';
 
     // Datenschnittstelle zu den Kind-Instanzen
     private const TX_TO_CHILD = '{2FD07B1C-5822-48B2-B394-0000776DF537}';
@@ -240,13 +240,13 @@ class MELCloudConnection extends IPSModuleStrict
         $this->chunkedDebug('DiagnoseApi/context', (string) json_encode($this->redactSensitiveData($context), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 
         // Felder, die normalizeUnit() bereits auswertet
-        $usedUnitKeys    = ['id', 'givenDisplayName', 'displayName', 'rssi', 'settings', 'isConnected', 'isInError', 'capabilities', 'timeZone', 'timezone', 'errorCode', 'frostProtection', 'overheatProtection', 'holidayMode'];
+        $usedUnitKeys = ['id', 'givenDisplayName', 'displayName', 'rssi', 'settings', 'isConnected', 'isInError', 'capabilities', 'timeZone', 'timezone', 'errorCode', 'frostProtection', 'overheatProtection', 'holidayMode'];
         $usedSettingKeys = ['Power', 'OperationMode', 'SetTemperature', 'RoomTemperature', 'SetFanSpeed', 'ActualFanSpeed', 'VaneVerticalDirection', 'VaneHorizontalDirection', 'InStandbyMode', 'IsInError', 'ErrorCode', 'FrostProtection', 'OverheatProtection', 'HolidayMode'];
 
-        $unusedUnitKeys    = [];
+        $unusedUnitKeys = [];
         $unusedSettingKeys = [];
-        $otherDeviceLists  = [];
-        $unitCount         = 0;
+        $otherDeviceLists = [];
+        $unitCount = 0;
 
         foreach ($context['buildings'] ?? [] as $building) {
             foreach ($building as $key => $value) {
@@ -271,14 +271,14 @@ class MELCloudConnection extends IPSModuleStrict
         }
 
         // Telemetrie/Trend-Endpunkte stichprobenartig für das erste konfigurierte Gerät prüfen
-        $sampleUnit    = $this->getChildUnitIDs()[0] ?? null;
-        $energyLabels  = [];
-        $trendLabels   = [];
+        $sampleUnit = $this->getChildUnitIDs()[0] ?? null;
+        $energyLabels = [];
+        $trendLabels = [];
 
         if ($sampleUnit !== null) {
             try {
-                $now   = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-                $from  = $now->modify('-1 day');
+                $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+                $from = $now->modify('-1 day');
                 $query = http_build_query([
                     'from'     => $from->format('Y-m-d H:i'),
                     'to'       => $now->format('Y-m-d H:i'),
@@ -298,8 +298,8 @@ class MELCloudConnection extends IPSModuleStrict
             }
 
             try {
-                $now   = new DateTimeImmutable('now', new DateTimeZone('UTC'));
-                $from  = $now->modify('-1 day');
+                $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+                $from = $now->modify('-1 day');
                 $query = http_build_query([
                     'unitId' => $sampleUnit,
                     'period' => 'Daily',
@@ -320,7 +320,7 @@ class MELCloudConnection extends IPSModuleStrict
             }
         }
 
-        $summary   = [];
+        $summary = [];
         $summary[] = $unitCount . ' Klimagerät(e) in /context gefunden.';
         $summary[] = 'Ungenutzte Felder auf Geräte-Ebene: ' . (empty($unusedUnitKeys) ? '(keine)' : implode(', ', array_keys($unusedUnitKeys)));
         $summary[] = 'Ungenutzte settings-Felder: ' . (empty($unusedSettingKeys) ? '(keine)' : implode(', ', array_keys($unusedSettingKeys)));
@@ -377,6 +377,110 @@ class MELCloudConnection extends IPSModuleStrict
         }
     }
 
+    /**
+     * Pollt den Energieverbrauch je Gerät (seltener) und verteilt ihn an die Kinder.
+     */
+    public function UpdateEnergy(): void
+    {
+        foreach ($this->getChildUnitIDs() as $unitID) {
+            try {
+                $energy = $this->fetchEnergy($unitID);
+            } catch (Exception $e) {
+                $this->SendDebug(__FUNCTION__, $unitID . ' Energie: ' . $e->getMessage(), 0);
+                continue;
+            }
+            if ($energy['hasData']) {
+                $this->sendToChild($unitID, [
+                    'EnergyConsumed' => $energy['rolling24hKWh'],
+                    'EnergyTotal'    => $energy['totalKWh']
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Pollt die Außentemperatur je Gerät (eigenes, unabhängig konfigurierbares Intervall)
+     * und verteilt sie an die Kinder.
+     */
+    public function UpdateOutdoorTemperature(): void
+    {
+        foreach ($this->getChildUnitIDs() as $unitID) {
+            try {
+                $temp = $this->fetchOutdoorTemperature($unitID);
+            } catch (Exception $e) {
+                $this->SendDebug(__FUNCTION__, $unitID . ' Außentemperatur: ' . $e->getMessage(), 0);
+                $this->sendToChild($unitID, ['OutdoorTemperatureStale'       => $this->isOutdoorStale($unitID)]);
+                continue;
+            }
+            if ($temp !== null) {
+                $readings = json_decode($this->ReadAttributeString('OutdoorReadings'), true);
+                if (!is_array($readings)) {
+                    $readings = [];
+                }
+                $readings[$unitID] = $temp['recordedAt'];
+                $this->WriteAttributeString('OutdoorReadings', (string) json_encode($readings));
+                $this->sendToChild($unitID, [
+                    'OutdoorTemperature'            => $temp['value'],
+                    'OutdoorTemperatureLastReading' => (new DateTimeImmutable('@' . $temp['recordedAt']))->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM),
+                    'OutdoorTemperatureStale'       => (time() - $temp['recordedAt']) > 21600
+                ]);
+            } else {
+                // Den letzten Temperaturwert beibehalten, aber seine Aktualität
+                // auch bei einer leeren Antwort sichtbar machen.
+                $this->sendToChild($unitID, ['OutdoorTemperatureStale'       => $this->isOutdoorStale($unitID)]);
+            }
+        }
+    }
+
+
+    /* -------------------------------------------------------------------------
+     * Datenfluss von den Kindern (Steuerbefehle)
+     * ---------------------------------------------------------------------- */
+
+    public function ForwardData(string $JSONString): string
+    {
+        $this->SendDebug('ForwardData', 'Empfangen: ' . substr($JSONString, 0, 300), 0);
+
+        $outer = json_decode($JSONString, true);
+        $data = isset($outer['Buffer']) ? json_decode(hex2bin($outer['Buffer']), true) : null;
+        if (!is_array($data) || !isset($data['UnitID'], $data['Control'])) {
+            $this->SendDebug('ForwardData', 'Ungültige Anfrage (kein UnitID/Control)', 0);
+            return (string) json_encode(['success' => false, 'error' => 'invalid request']);
+        }
+
+        try {
+            $this->sendControl($data['UnitID'], $data['Control']);
+            $this->SendDebug('ForwardData', 'sendControl OK für UnitID=' . $data['UnitID'], 0);
+            // Bewusst kein Sofort-Refresh: die Cloud übernimmt den neuen Wert ggf. erst
+            // mit Verzögerung, ein sofortiger UpdateStatus() würde den optimistisch
+            // gesetzten Wert wieder mit dem alten Cloud-Stand überschreiben.
+            return (string) json_encode(['success' => true]);
+        } catch (Exception $e) {
+            $this->SendDebug(__FUNCTION__, 'Control-Fehler: ' . $e->getMessage(), 0);
+            return (string) json_encode(['success' => false, 'error' => $e->getMessage()]);
+        }
+    }
+
+    /* -------------------------------------------------------------------------
+     * Exportierte Funktion für den Konfigurator
+     * ---------------------------------------------------------------------- */
+
+    /**
+     * Liefert die Geräteliste als JSON-String an den MELCloud Configurator.
+     */
+    public function GetDeviceListJSON(): string
+    {
+        try {
+            $context = $this->fetchContext();
+            $devices = $this->extractDevices($context);
+            return (string) json_encode($devices);
+        } catch (Exception $e) {
+            $this->SendDebug(__FUNCTION__, $e->getMessage(), 0);
+            return '[]';
+        }
+    }
+
+
     private function updateStatusInternal(): void
     {
         try {
@@ -431,61 +535,6 @@ class MELCloudConnection extends IPSModuleStrict
     }
 
     /**
-     * Pollt den Energieverbrauch je Gerät (seltener) und verteilt ihn an die Kinder.
-     */
-    public function UpdateEnergy(): void
-    {
-        foreach ($this->getChildUnitIDs() as $unitID) {
-            try {
-                $energy = $this->fetchEnergy($unitID);
-            } catch (Exception $e) {
-                $this->SendDebug(__FUNCTION__, $unitID . ' Energie: ' . $e->getMessage(), 0);
-                continue;
-            }
-            if ($energy['hasData']) {
-                $this->sendToChild($unitID, [
-                    'EnergyConsumed' => $energy['rolling24hKWh'],
-                    'EnergyTotal' => $energy['totalKWh']
-                ]);
-            }
-        }
-    }
-
-    /**
-     * Pollt die Außentemperatur je Gerät (eigenes, unabhängig konfigurierbares Intervall)
-     * und verteilt sie an die Kinder.
-     */
-    public function UpdateOutdoorTemperature(): void
-    {
-        foreach ($this->getChildUnitIDs() as $unitID) {
-            try {
-                $temp = $this->fetchOutdoorTemperature($unitID);
-            } catch (Exception $e) {
-                $this->SendDebug(__FUNCTION__, $unitID . ' Außentemperatur: ' . $e->getMessage(), 0);
-                $this->sendToChild($unitID, ['OutdoorTemperatureStale' => $this->isOutdoorStale($unitID)]);
-                continue;
-            }
-            if ($temp !== null) {
-                $readings = json_decode($this->ReadAttributeString('OutdoorReadings'), true);
-                if (!is_array($readings)) {
-                    $readings = [];
-                }
-                $readings[$unitID] = $temp['recordedAt'];
-                $this->WriteAttributeString('OutdoorReadings', (string) json_encode($readings));
-                $this->sendToChild($unitID, [
-                    'OutdoorTemperature' => $temp['value'],
-                    'OutdoorTemperatureLastReading' => (new DateTimeImmutable('@' . $temp['recordedAt']))->setTimezone(new DateTimeZone('UTC'))->format(DATE_ATOM),
-                    'OutdoorTemperatureStale' => (time() - $temp['recordedAt']) > 21600
-                ]);
-            } else {
-                // Den letzten Temperaturwert beibehalten, aber seine Aktualität
-                // auch bei einer leeren Antwort sichtbar machen.
-                $this->sendToChild($unitID, ['OutdoorTemperatureStale' => $this->isOutdoorStale($unitID)]);
-            }
-        }
-    }
-
-    /**
      * @param array<string,mixed> $fields Zusätzlich zur UnitID zu übertragende Felder.
      */
     private function sendToChild(string $unitID, array $fields): void
@@ -495,53 +544,6 @@ class MELCloudConnection extends IPSModuleStrict
             'UnitID' => $unitID,
             'Buffer' => bin2hex((string) json_encode(array_merge(['UnitID' => $unitID], $fields)))
         ]));
-    }
-
-    /* -------------------------------------------------------------------------
-     * Datenfluss von den Kindern (Steuerbefehle)
-     * ---------------------------------------------------------------------- */
-
-    public function ForwardData(string $JSONString): string
-    {
-        $this->SendDebug('ForwardData', 'Empfangen: ' . substr($JSONString, 0, 300), 0);
-
-        $outer = json_decode($JSONString, true);
-        $data  = isset($outer['Buffer']) ? json_decode(hex2bin($outer['Buffer']), true) : null;
-        if (!is_array($data) || !isset($data['UnitID'], $data['Control'])) {
-            $this->SendDebug('ForwardData', 'Ungültige Anfrage (kein UnitID/Control)', 0);
-            return (string) json_encode(['success' => false, 'error' => 'invalid request']);
-        }
-
-        try {
-            $this->sendControl($data['UnitID'], $data['Control']);
-            $this->SendDebug('ForwardData', 'sendControl OK für UnitID=' . $data['UnitID'], 0);
-            // Bewusst kein Sofort-Refresh: die Cloud übernimmt den neuen Wert ggf. erst
-            // mit Verzögerung, ein sofortiger UpdateStatus() würde den optimistisch
-            // gesetzten Wert wieder mit dem alten Cloud-Stand überschreiben.
-            return (string) json_encode(['success' => true]);
-        } catch (Exception $e) {
-            $this->SendDebug(__FUNCTION__, 'Control-Fehler: ' . $e->getMessage(), 0);
-            return (string) json_encode(['success' => false, 'error' => $e->getMessage()]);
-        }
-    }
-
-    /* -------------------------------------------------------------------------
-     * Exportierte Funktion für den Konfigurator
-     * ---------------------------------------------------------------------- */
-
-    /**
-     * Liefert die Geräteliste als JSON-String an den MELCloud Configurator.
-     */
-    public function GetDeviceListJSON(): string
-    {
-        try {
-            $context = $this->fetchContext();
-            $devices = $this->extractDevices($context);
-            return (string) json_encode($devices);
-        } catch (Exception $e) {
-            $this->SendDebug(__FUNCTION__, $e->getMessage(), 0);
-            return '[]';
-        }
     }
 
     /**
@@ -682,14 +684,14 @@ class MELCloudConnection extends IPSModuleStrict
     {
         // Vollständiger Body, nicht gesetzte Felder bleiben null (analog HA-Modul)
         $body = [
-            'power'                       => null,
-            'operationMode'               => null,
-            'setFanSpeed'                 => null,
-            'vaneHorizontalDirection'     => null,
-            'vaneVerticalDirection'       => null,
-            'setTemperature'              => null,
+            'power'                        => null,
+            'operationMode'                => null,
+            'setFanSpeed'                  => null,
+            'vaneHorizontalDirection'      => null,
+            'vaneVerticalDirection'        => null,
+            'setTemperature'               => null,
             'temperatureIncrementOverride' => null,
-            'inStandbyMode'               => null
+            'inStandbyMode'                => null
         ];
         foreach ($control as $key => $value) {
             if (array_key_exists($key, $body)) {
@@ -705,7 +707,7 @@ class MELCloudConnection extends IPSModuleStrict
      */
     private function fetchEnergy(string $unitID): array
     {
-        $now  = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $from = $now->modify('-2 days');
         $query = http_build_query([
             'from'     => $from->format('Y-m-d H:i'),
@@ -715,7 +717,7 @@ class MELCloudConnection extends IPSModuleStrict
         ]);
 
         $response = $this->apiRequest('GET', '/telemetry/telemetry/energy/' . rawurlencode($unitID) . '?' . $query);
-        $data     = json_decode($response, true);
+        $data = json_decode($response, true);
 
         // Antwortstruktur: measureData -> values -> [{ value }]. Die Werte kommen in Wh
         // (bestätigt über andrew-blake/melcloudhome), nicht in kWh – daher /1000.
@@ -725,7 +727,7 @@ class MELCloudConnection extends IPSModuleStrict
         $entries = MELCloudDataTools::parseEnergyEntries($data, $now);
         if ($entries === []) {
             $this->SendDebug(__FUNCTION__, $unitID . ' keine gültigen Messwerte', 0);
-            return ['hasData' => false, 'rolling24hKWh' => 0.0, 'totalKWh' => 0.0];
+            return ['hasData'        => false, 'rolling24hKWh' => 0.0, 'totalKWh'      => 0.0];
         }
         $allState = json_decode($this->ReadAttributeString('EnergyState'), true);
         if (!is_array($allState)) {
@@ -739,9 +741,9 @@ class MELCloudConnection extends IPSModuleStrict
         }
         $this->SendDebug(__FUNCTION__, sprintf('%s: 24h=%.3f kWh, kumulativ=%.3f kWh, Delta=%.3f kWh', $unitID, $updated['rolling24hKWh'], $updated['state']['totalKWh'], $updated['deltaKWh']), 0);
         return [
-            'hasData' => true,
+            'hasData'       => true,
             'rolling24hKWh' => $updated['rolling24hKWh'],
-            'totalKWh' => $updated['state']['totalKWh']
+            'totalKWh'      => $updated['state']['totalKWh']
         ];
     }
 
@@ -751,7 +753,7 @@ class MELCloudConnection extends IPSModuleStrict
      */
     private function fetchOutdoorTemperature(string $unitID): ?array
     {
-        $now  = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
         $from = $now->modify('-2 days');
         $query = http_build_query([
             'unitId' => $unitID,
@@ -781,7 +783,7 @@ class MELCloudConnection extends IPSModuleStrict
             return $reading;
         }
 
-        $labels = implode(', ', array_map(fn($d) => $d['label'] ?? '?', $data['datasets']));
+        $labels = implode(', ', array_map(fn ($d) => $d['label'] ?? '?', $data['datasets']));
         $this->SendDebug('fetchOutdoorTemperature', $unitID . ' OUTDOOR_TEMPERATURE nicht gefunden – Labels: ' . $labels, 0);
         return null;
     }
@@ -843,7 +845,7 @@ class MELCloudConnection extends IPSModuleStrict
         }
         return [
             'enabled' => $this->toBoolean($source['enabled'] ?? $source['isEnabled'] ?? false),
-            'active' => $this->toBoolean($source['active'] ?? $source['isActive'] ?? false)
+            'active'  => $this->toBoolean($source['active'] ?? $source['isActive'] ?? false)
         ];
     }
 
@@ -1091,7 +1093,7 @@ class MELCloudConnection extends IPSModuleStrict
 
     private function getAccessTokenUnlocked(bool $forceRefresh = false): string
     {
-        $now    = time();
+        $now = time();
         $access = $this->ReadAttributeString('AccessToken');
         $expiry = $this->ReadAttributeInteger('TokenExpiry');
 
@@ -1157,7 +1159,7 @@ class MELCloudConnection extends IPSModuleStrict
 
     private function login(): ?array
     {
-        $email    = $this->ReadPropertyString('Email');
+        $email = $this->ReadPropertyString('Email');
         $password = $this->ReadPropertyString('Password');
         if ($email === '' || $password === '') {
             return null;
@@ -1168,9 +1170,9 @@ class MELCloudConnection extends IPSModuleStrict
 
         try {
             // Schritt 1: PAR
-            $codeVerifier  = $this->base64Url(random_bytes(48));
+            $codeVerifier = $this->base64Url(random_bytes(48));
             $codeChallenge = $this->base64Url(hash('sha256', $codeVerifier, true));
-            $state         = $this->base64Url(random_bytes(16));
+            $state = $this->base64Url(random_bytes(16));
 
             $this->SendDebug('login/1-PAR', 'POST ' . self::AUTH_BASE_URL . '/connect/par', 0);
             [$status, $response] = $this->httpRequest(
@@ -1217,7 +1219,7 @@ class MELCloudConnection extends IPSModuleStrict
             if ($csrf === '') {
                 // Alle input-Felder im HTML loggen für Diagnose
                 preg_match_all('/<input[^>]+>/i', $loginPage, $inputs);
-                $this->SendDebug('login/3-CSRF', 'HTML-input-Felder: ' . implode(' | ', array_map(fn($t) => strip_tags('<x ' . $t . '>'), array_slice($inputs[0], 0, 20))), 0);
+                $this->SendDebug('login/3-CSRF', 'HTML-input-Felder: ' . implode(' | ', array_map(fn ($t) => strip_tags('<x ' . $t . '>'), array_slice($inputs[0], 0, 20))), 0);
             }
 
             // Schritt 4: Zugangsdaten senden
@@ -1315,9 +1317,9 @@ class MELCloudConnection extends IPSModuleStrict
             'cognitoAsfData' => ''
         ]);
 
-        $url    = $loginUrl;
+        $url = $loginUrl;
         $method = 'POST';
-        $data   = $postFields;
+        $data = $postFields;
 
         for ($hop = 0; $hop < 12; $hop++) {
             $headers = ['User-Agent: ' . self::USER_AGENT, 'Referer: ' . $loginUrl];
@@ -1334,9 +1336,9 @@ class MELCloudConnection extends IPSModuleStrict
                     $this->SendDebug('submitCredentials', 'Redirect-URL mit Auth-Code: ' . substr($location, 0, 120), 0);
                     return $this->extractCodeFromUrl($location);
                 }
-                $url    = $this->resolveUrl($url, $location);
+                $url = $this->resolveUrl($url, $location);
                 $method = 'GET';
-                $data   = null;
+                $data = null;
                 continue;
             }
 
@@ -1352,9 +1354,9 @@ class MELCloudConnection extends IPSModuleStrict
             $nextUrl = $this->extractJsRedirect($body, $url);
             if ($nextUrl !== '') {
                 $this->SendDebug('submitCredentials', 'JS-Redirect folgen: ' . substr($nextUrl, 0, 150), 0);
-                $url    = $nextUrl;
+                $url = $nextUrl;
                 $method = 'GET';
-                $data   = null;
+                $data = null;
                 continue;
             }
 
@@ -1483,14 +1485,14 @@ class MELCloudConnection extends IPSModuleStrict
             throw new Exception('cURL-Fehler: ' . $error);
         }
 
-        $status       = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
-        $headerSize   = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $headerSize = (int) curl_getinfo($ch, CURLINFO_HEADER_SIZE);
         $effectiveUrl = (string) curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
         curl_close($ch);
 
         $headerText = substr($raw, 0, $headerSize);
-        $respBody   = substr($raw, $headerSize);
-        $location   = $this->extractLocationHeader($headerText);
+        $respBody = substr($raw, $headerSize);
+        $location = $this->extractLocationHeader($headerText);
 
         return [$status, $respBody, $location, $effectiveUrl];
     }
@@ -1514,7 +1516,7 @@ class MELCloudConnection extends IPSModuleStrict
         }
         $parts = parse_url($base);
         $scheme = $parts['scheme'] ?? 'https';
-        $host   = $parts['host'] ?? '';
+        $host = $parts['host'] ?? '';
         $origin = $scheme . '://' . $host . (isset($parts['port']) ? ':' . $parts['port'] : '');
 
         if (strpos($relative, '/') === 0) {
