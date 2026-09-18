@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use PHPUnitFrameworkTestCase;
+use PHPUnit\Framework\TestCase;
 
 require_once __DIR__ . '/../MELCloudConnection/MELCloudDataTools.php';
 

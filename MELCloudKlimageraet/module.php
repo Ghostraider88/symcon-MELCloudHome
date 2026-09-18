@@ -243,7 +243,10 @@ class MELCloudKlimageraet extends IPSModuleStrict
 
         switch ($Ident) {
             case 'Power':
-                $power = (bool) $Value;
+                if (!is_bool($Value)) {
+                    throw new InvalidArgumentException('Power erwartet einen booleschen Wert');
+                }
+                $power = $Value;
                 $this->SetValue('Power', $power);
                 // Beim Einschalten werden Power und der aktuell gewählte Modus
                 // atomar übertragen; dadurch entsteht kein kurzer ungültiger Zustand.
@@ -255,7 +258,10 @@ class MELCloudKlimageraet extends IPSModuleStrict
                 break;
 
             case 'Mode':
-                $api = self::MODE_MAP[(int) $Value] ?? null;
+                if (!is_int($Value)) {
+                    throw new InvalidArgumentException('Mode erwartet einen Integer-Wert');
+                }
+                $api = self::MODE_MAP[$Value] ?? null;
                 if ($api === null) {
                     return;
                 }
@@ -269,6 +275,9 @@ class MELCloudKlimageraet extends IPSModuleStrict
                 break;
 
             case 'SetTemperature':
+                if (!is_int($Value) && !is_float($Value)) {
+                    throw new InvalidArgumentException('SetTemperature erwartet einen numerischen Wert');
+                }
                 [$tempMin, $tempMax] = $this->temperatureRangeForMode((int) $this->GetValue('Mode'));
                 $temp = max($tempMin, min($tempMax, (float) $Value));
                 $this->SetValue('SetTemperature', $temp);
@@ -276,7 +285,10 @@ class MELCloudKlimageraet extends IPSModuleStrict
                 break;
 
             case 'FanSpeed':
-                $api = self::FAN_MAP[(int) $Value] ?? null;
+                if (!is_int($Value)) {
+                    throw new InvalidArgumentException('FanSpeed erwartet einen Integer-Wert');
+                }
+                $api = self::FAN_MAP[$Value] ?? null;
                 if ($api === null) {
                     return;
                 }
@@ -289,7 +301,10 @@ class MELCloudKlimageraet extends IPSModuleStrict
                 break;
 
             case 'VaneVertical':
-                $api = self::VANE_V_MAP[(int) $Value] ?? null;
+                if (!is_int($Value)) {
+                    throw new InvalidArgumentException('VaneVertical erwartet einen Integer-Wert');
+                }
+                $api = self::VANE_V_MAP[$Value] ?? null;
                 if ($api === null) {
                     return;
                 }
@@ -302,7 +317,10 @@ class MELCloudKlimageraet extends IPSModuleStrict
                 break;
 
             case 'VaneHorizontal':
-                $api = self::VANE_H_MAP[(int) $Value] ?? null;
+                if (!is_int($Value)) {
+                    throw new InvalidArgumentException('VaneHorizontal erwartet einen Integer-Wert');
+                }
+                $api = self::VANE_H_MAP[$Value] ?? null;
                 if ($api === null) {
                     return;
                 }
@@ -315,7 +333,7 @@ class MELCloudKlimageraet extends IPSModuleStrict
                 break;
 
             default:
-                throw new Exception('Invalid Ident: ' . $Ident);
+                throw new InvalidArgumentException('Invalid Ident: ' . $Ident);
         }
     }
 

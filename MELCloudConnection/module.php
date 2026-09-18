@@ -554,7 +554,7 @@ class MELCloudConnection extends IPSModuleStrict
             if (IPS_GetInstance($instanceID)['ConnectionID'] !== $this->InstanceID) {
                 continue;
             }
-            $unitID = @IPS_GetProperty($instanceID, 'UnitID');
+            $unitID = IPS_GetProperty($instanceID, 'UnitID');
             if (is_string($unitID) && $unitID !== '') {
                 $result[$unitID] = $instanceID;
             }
@@ -1259,7 +1259,9 @@ class MELCloudConnection extends IPSModuleStrict
             return null;
         } finally {
             if (is_string($cookieJar) && file_exists($cookieJar)) {
-                @unlink($cookieJar);
+                if (!unlink($cookieJar)) {
+                    $this->SendDebug(__FUNCTION__, 'Temporäre Cookie-Datei konnte nicht gelöscht werden', 0);
+                }
             }
         }
     }

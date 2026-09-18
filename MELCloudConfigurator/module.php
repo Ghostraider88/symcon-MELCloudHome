@@ -80,7 +80,7 @@ class MELCloudConfigurator extends IPSModuleStrict
             if (IPS_GetInstance($instID)['ConnectionID'] !== $parentID) {
                 continue;
             }
-            $unitID = @IPS_GetProperty($instID, 'UnitID');
+            $unitID = IPS_GetProperty($instID, 'UnitID');
             if (is_string($unitID) && $unitID !== '') {
                 $existing[$unitID] = $instID;
             }
