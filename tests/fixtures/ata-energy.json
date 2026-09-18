@@ -1,12 +1,21 @@
 {
-  "measureData": [
-    {
-      "type": "cumulative_energy_consumed_since_last_upload",
-      "values": [
-        {"timestamp": "2026-09-17T08:15:00Z", "value": 1200},
-        {"timestamp": "2026-09-17T09:15:00Z", "value": 1800},
-        {"timestamp": "2026-09-17T10:15:00Z", "value": 6553600}
-      ]
-    }
-  ]
+    "measureData": [
+        {
+            "type": "cumulative_energy_consumed_since_last_upload",
+            "values": [
+                {
+                    "timestamp": "2026-09-17T08:15:00Z",
+                    "value": 1200
+                },
+                {
+                    "timestamp": "2026-09-17T09:15:00Z",
+                    "value": 1800
+                },
+                {
+                    "timestamp": "2026-09-17T10:15:00Z",
+                    "value": 6553600
+                }
+            ]
+        }
+    ]
 }

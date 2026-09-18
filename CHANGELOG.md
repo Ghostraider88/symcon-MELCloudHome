@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+- Klimagerät: Der erste Statusabruf nach dem Anlegen wird verzögert, bis der
+  Connection-Parent aktiv ist. Dadurch wird kein InstanceInterface-is-not-available-
+  Fehler mehr während der Instanzerstellung ausgelöst.
+- Connection: Optionalen ATA-Live-Sync über den nativen Symcon-WebSocket-Client
+  ergänzt. MELCloud-Pushdaten lösen einen gedrosselten vollständigen /context-Abruf
+  aus; Polling für Status, Energie und Außentemperatur bleibt aktiv.
+- Connection: Kurzlebige WebSocket-Hashes werden mit dem bestehenden OAuth-Token
+  angefordert und regelmäßig erneuert. Status, letzter Push-Zeitpunkt und erkannte
+  Reconnects werden als Diagnosevariablen bereitgestellt.
+- Connection: Parallele /context-Abrufe werden synchronisiert. ATW-/Ecodan- und
+  Worker-Logik bleibt außerhalb des Scopes.
+
 ## Build 38 - 2026-09-17
 - Connection: Energieverbrauch wird zusätzlich als persistenter kumulativer ATA-Zähler mit
   Delta-Verarbeitung geführt. Die bestehende 24-Stunden-Anzeige `EnergyConsumed` bleibt

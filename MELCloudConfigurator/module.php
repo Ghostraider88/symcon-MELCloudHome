@@ -24,20 +24,6 @@ class MELCloudConfigurator extends IPSModuleStrict
         $this->updateConnectionStatus();
     }
 
-    /**
-     * Die automatische Verbindung zu einem kompatiblen Gateway (Connection-Instanz) wird
-     * von Symcon teils erst NACH ApplyChanges() hergestellt (z.B. direkt beim Anlegen der
-     * Instanz). Ohne erneute Prüfung bliebe der Status auf "Keine Verbindung zum Splitter"
-     * stehen, bis der Nutzer die Verbindung manuell bestätigt. Da die Konfigurationsseite
-     * ohnehin geöffnet werden muss, um Geräte anzulegen, wird der Status hier zusätzlich
-     * aktualisiert.
-     */
-    private function updateConnectionStatus(): void
-    {
-        $parentID = IPS_GetInstance($this->InstanceID)['ConnectionID'];
-        $this->SetStatus($parentID !== 0 ? 102 : 104);
-    }
-
     public function GetConfigurationForm(): string
     {
         $this->updateConnectionStatus();
@@ -48,7 +34,7 @@ class MELCloudConfigurator extends IPSModuleStrict
         $parentID = IPS_GetInstance($this->InstanceID)['ConnectionID'];
         if ($parentID !== 0) {
             try {
-                $json    = MELC_GetDeviceListJSON($parentID);
+                $json = MELC_GetDeviceListJSON($parentID);
                 $devices = json_decode($json, true);
                 if (is_array($devices)) {
                     $values = $this->buildValues($devices, $parentID);
@@ -72,6 +58,20 @@ class MELCloudConfigurator extends IPSModuleStrict
      * @param array<int,array<string,mixed>> $devices
      * @return array<int,array<string,mixed>>
      */
+    /**
+     * Die automatische Verbindung zu einem kompatiblen Gateway (Connection-Instanz) wird
+     * von Symcon teils erst NACH ApplyChanges() hergestellt (z.B. direkt beim Anlegen der
+     * Instanz). Ohne erneute Prüfung bliebe der Status auf "Keine Verbindung zum Splitter"
+     * stehen, bis der Nutzer die Verbindung manuell bestätigt. Da die Konfigurationsseite
+     * ohnehin geöffnet werden muss, um Geräte anzulegen, wird der Status hier zusätzlich
+     * aktualisiert.
+     */
+    private function updateConnectionStatus(): void
+    {
+        $parentID = IPS_GetInstance($this->InstanceID)['ConnectionID'];
+        $this->SetStatus($parentID !== 0 ? 102 : 104);
+    }
+
     private function buildValues(array $devices, int $parentID): array
     {
         // Bereits angelegte Geräte: UnitID -> InstanceID
@@ -80,7 +80,7 @@ class MELCloudConfigurator extends IPSModuleStrict
             if (IPS_GetInstance($instID)['ConnectionID'] !== $parentID) {
                 continue;
             }
-            $unitID = @IPS_GetProperty($instID, 'UnitID');
+            $unitID = IPS_GetProperty($instID, 'UnitID');
             if (is_string($unitID) && $unitID !== '') {
                 $existing[$unitID] = $instID;
             }
@@ -89,7 +89,7 @@ class MELCloudConfigurator extends IPSModuleStrict
         $values = [];
         foreach ($devices as $device) {
             $unitID = (string) $device['UnitID'];
-            $name   = (string) ($device['Name'] ?? $unitID);
+            $name = (string) ($device['Name'] ?? $unitID);
 
             $values[] = [
                 'instanceID' => $existing[$unitID] ?? 0,

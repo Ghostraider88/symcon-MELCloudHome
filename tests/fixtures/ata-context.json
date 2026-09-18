@@ -1,40 +1,77 @@
 {
-  "buildings": [
-    {
-      "airToAirUnits": [
+    "buildings": [
         {
-          "id": "fixture-ata-001",
-          "givenDisplayName": "ATA Testgerät",
-          "isConnected": true,
-          "rssi": -52,
-          "timeZone": "Europe/Berlin",
-          "capabilities": {
-            "numberOfFanSpeeds": 3,
-            "hasHalfDegreeIncrements": true,
-            "hasAutomaticFanSpeed": true,
-            "hasSwing": true,
-            "hasAirDirection": true,
-            "hasCoolOperationMode": true,
-            "hasHeatOperationMode": true,
-            "hasAutoOperationMode": true,
-            "hasDryOperationMode": false
-          },
-          "frostProtection": {"enabled": true, "active": false, "min": 8, "max": 12},
-          "overheatProtection": null,
-          "holidayMode": {"enabled": false, "active": false, "startDate": null, "endDate": null},
-          "settings": [
-            {"name": "Power", "value": "True"},
-            {"name": "OperationMode", "value": "Cool"},
-            {"name": "SetTemperature", "value": "22.5"},
-            {"name": "RoomTemperature", "value": "23.1"},
-            {"name": "SetFanSpeed", "value": "Two"},
-            {"name": "ActualFanSpeed", "value": "One"},
-            {"name": "ErrorCode", "value": ""},
-            {"name": "InStandbyMode", "value": "False"},
-            {"name": "IsInError", "value": "False"}
-          ]
+            "airToAirUnits": [
+                {
+                    "id": "fixture-ata-001",
+                    "givenDisplayName": "ATA Testgerät",
+                    "isConnected": true,
+                    "rssi": -52,
+                    "timeZone": "Europe/Berlin",
+                    "capabilities": {
+                        "numberOfFanSpeeds": 3,
+                        "hasHalfDegreeIncrements": true,
+                        "hasAutomaticFanSpeed": true,
+                        "hasSwing": true,
+                        "hasAirDirection": true,
+                        "hasCoolOperationMode": true,
+                        "hasHeatOperationMode": true,
+                        "hasAutoOperationMode": true,
+                        "hasDryOperationMode": false
+                    },
+                    "frostProtection": {
+                        "enabled": true,
+                        "active": false,
+                        "min": 8,
+                        "max": 12
+                    },
+                    "overheatProtection": null,
+                    "holidayMode": {
+                        "enabled": false,
+                        "active": false,
+                        "startDate": null,
+                        "endDate": null
+                    },
+                    "settings": [
+                        {
+                            "name": "Power",
+                            "value": "True"
+                        },
+                        {
+                            "name": "OperationMode",
+                            "value": "Cool"
+                        },
+                        {
+                            "name": "SetTemperature",
+                            "value": "22.5"
+                        },
+                        {
+                            "name": "RoomTemperature",
+                            "value": "23.1"
+                        },
+                        {
+                            "name": "SetFanSpeed",
+                            "value": "Two"
+                        },
+                        {
+                            "name": "ActualFanSpeed",
+                            "value": "One"
+                        },
+                        {
+                            "name": "ErrorCode",
+                            "value": ""
+                        },
+                        {
+                            "name": "InStandbyMode",
+                            "value": "False"
+                        },
+                        {
+                            "name": "IsInError",
+                            "value": "False"
+                        }
+                    ]
+                }
+            ]
         }
-      ]
-    }
-  ]
+    ]
 }

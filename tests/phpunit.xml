@@ -1,14 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.1/phpunit.xsd"
-         bootstrap="tests/stubs/autoload.php"
-         colors="true">
+         cacheDirectory=".phpunit.cache">
     <php>
         <const name="PHPUNIT_TESTSUITE" value="true"/>
     </php>
-    <testsuites>
-        <testsuite name="Library Test Suite">
-            <directory>tests</directory>
-        </testsuite>
-    </testsuites>
 </phpunit>

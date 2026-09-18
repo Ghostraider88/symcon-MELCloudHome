@@ -3,7 +3,7 @@
     "name": "MELCloud Configurator",
     "type": 4,
     "vendor": "Mitsubishi Electric",
-    "url": "https://github.com/ghostraider88/MELCloudHome",
+    "url": "https://github.com/Ghostraider88/symcon-MELCloudHome",
     "aliases": [],
     "parentRequirements": [
         "{7D0C324F-EF82-4716-A8A0-00006378D27F}"
