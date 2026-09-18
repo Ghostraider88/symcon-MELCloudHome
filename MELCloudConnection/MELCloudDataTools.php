@@ -109,7 +109,7 @@ final class MELCloudDataTools
                     continue;
                 }
                 $timestamp = self::timestampFromValue($point['x'] ?? $point['timestamp'] ?? $point['time'] ?? null, $zone);
-                if ($timestamp === null || $timestamp > $now + 300 || (int) date('s', $timestamp) === 0) {
+                if ($timestamp === null || $timestamp > $now + 300 || (int) date('i', $timestamp) === 0) {
                     continue;
                 }
                 if ($latest === null || $timestamp > $latest['recordedAt']) {

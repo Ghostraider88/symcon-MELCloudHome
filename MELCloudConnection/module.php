@@ -432,7 +432,6 @@ class MELCloudConnection extends IPSModuleStrict
         }
     }
 
-
     /* -------------------------------------------------------------------------
      * Datenfluss von den Kindern (Steuerbefehle)
      * ---------------------------------------------------------------------- */
@@ -479,7 +478,6 @@ class MELCloudConnection extends IPSModuleStrict
             return '[]';
         }
     }
-
 
     private function updateStatusInternal(): void
     {
