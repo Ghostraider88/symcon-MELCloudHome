@@ -30,6 +30,11 @@
             "caption": "Außentemperatur-Aktualisierung (Minuten, min. 30)",
             "minimum": 30,
             "suffix": "min"
+        },
+        {
+            "type": "CheckBox",
+            "name": "EnableLiveSync",
+            "caption": "Optionalen Live-Sync verwenden"
         }
     ],
     "actions": [

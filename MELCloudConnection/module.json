@@ -5,12 +5,15 @@
     "vendor": "Mitsubishi Electric",
     "url": "https://github.com/ghostraider88/MELCloudHome",
     "aliases": [],
-    "parentRequirements": [],
+    "parentRequirements": [
+        "{79827379-F36E-4ADA-8A95-5F8D1DC92FA9}"
+    ],
     "childRequirements": [
         "{2FD07B1C-5822-48B2-B394-0000776DF537}"
     ],
     "implemented": [
-        "{7D0C324F-EF82-4716-A8A0-00006378D27F}"
+        "{7D0C324F-EF82-4716-A8A0-00006378D27F}",
+        "{018EF6B5-AB94-40C6-AA53-46943E824ACF}"
     ],
     "prefix": "MELC"
 }

@@ -69,8 +69,8 @@ Energieverbrauch. Schutzmodi werden ausschließlich gelesen.
 Die Details zur Energie-Migration stehen in
 [`docs/ATA_MIGRATION.md`](docs/ATA_MIGRATION.md). Der aktuelle Stand zur technischen
 Live-Sync-Prüfung ist in [`docs/LIVE_SYNC_PROTOTYPE.md`](docs/LIVE_SYNC_PROTOTYPE.md)
-dokumentiert. Ein produktiver WebSocket-Worker ist bewusst noch nicht aktiviert; Polling bleibt
-der Fallback.
+dokumentiert. Der Live-Sync ist optional und standardmäßig deaktiviert; Polling bleibt
+unabhängig davon der Fallback.
 
 ## 5. Überblick
 
@@ -79,6 +79,7 @@ MELCloud Home Cloud
   |  Status (GET /context), Energie/Außentemperatur (Telemetrie/Report-Endpunkte)
   v
 MELCloud Connection (Splitter, hält Session + Konfigurator)
+  ^  optionaler nativer WebSocket-Push als /context-Trigger
   |  verteilt Daten an die Geräte-Instanzen
   v
 MELCloud Klimagerät (Device, je Gerät eine Instanz)

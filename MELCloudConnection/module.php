@@ -17,10 +17,17 @@ class MELCloudConnection extends IPSModuleStrict
     // OAuth / API Endpunkte (abgeleitet aus andrew-blake/melcloudhome)
     private const AUTH_BASE_URL    = 'https://auth.melcloudhome.com';
     private const API_BASE_URL     = 'https://mobile.bff.melcloudhome.com';
+    private const WS_TOKEN_URL     = 'https://6x2dgdulg7omjsxalnhmo4ynba0dcgwk.lambda-url.eu-west-1.on.aws/';
+    private const WS_URL            = 'wss://ws.melcloudhome.com/';
     private const OAUTH_CLIENT_ID  = 'homemobile';
     private const OAUTH_REDIRECT   = 'melcloudhome://';
     private const OAUTH_SCOPES     = 'openid profile email offline_access IdentityServerApi';
     private const USER_AGENT       = 'MonitorAndControl.App.Mobile/52 CFNetwork/3860.400.51 Darwin/25.3.0';
+
+    // Symcon-Datenfluss: natives WebSocket-I/O -> Connection
+    private const WS_CLIENT_MODULE_ID = '{D68FD31F-0E90-7019-F16C-1949BD3079EF}';
+    private const SIMPLE_RX            = '{018EF6B5-AB94-40C6-AA53-46943E824ACF}';
+    private const SIMPLE_TX            = '{79827379-F36E-4ADA-8A95-5F8D1DC92FA9}';
 
     // Datenschnittstelle zu den Kind-Instanzen
     private const TX_TO_CHILD = '{2FD07B1C-5822-48B2-B394-0000776DF537}';
@@ -34,6 +41,7 @@ class MELCloudConnection extends IPSModuleStrict
         $this->RegisterPropertyInteger('UpdateInterval', 60);              // Sekunden
         $this->RegisterPropertyInteger('EnergyInterval', 30);              // Minuten
         $this->RegisterPropertyInteger('OutdoorTemperatureInterval', 30);  // Minuten
+        $this->RegisterPropertyBoolean('EnableLiveSync', false);
 
         // Token werden als Attribute (nicht im Formular) gespeichert
         $this->RegisterAttributeString('AccessToken', '');
@@ -44,10 +52,36 @@ class MELCloudConnection extends IPSModuleStrict
         $this->RegisterAttributeInteger('StatusFailureCount', 0);
         $this->RegisterAttributeString('UnitTimeZones', '{}');
         $this->RegisterAttributeString('OutdoorReadings', '{}');
+        $this->RegisterAttributeInteger('LiveSyncLastPushAt', 0);
+        $this->RegisterAttributeInteger('LiveSyncReconnectCount', 0);
+        $this->RegisterAttributeInteger('LiveSyncParentStatus', 0);
+
+        $this->RegisterVariableString('LiveSyncStatus', 'Live-Sync Status', '~String', 90);
+        $this->RegisterVariableString('LiveSyncLastPush', 'Letztes Live-Update', '~String', 91);
+        $this->RegisterVariableInteger('LiveSyncReconnects', 'Live-Sync Reconnects', '', 92);
 
         $this->RegisterTimer('UpdateStatus', 0, 'MELC_UpdateStatus($_IPS[\'TARGET\']);');
         $this->RegisterTimer('UpdateEnergy', 0, 'MELC_UpdateEnergy($_IPS[\'TARGET\']);');
         $this->RegisterTimer('UpdateOutdoorTemperature', 0, 'MELC_UpdateOutdoorTemperature($_IPS[\'TARGET\']);');
+        $this->RegisterTimer('LiveSyncConfigure', 0, 'MELC_ConfigureLiveSync($_IPS[\'TARGET\']);');
+        $this->RegisterTimer('LiveSyncRefresh', 0, 'MELC_RefreshLiveSync($_IPS[\'TARGET\']);');
+        $this->RegisterTimer('LiveSyncMonitor', 0, 'MELC_MonitorLiveSync($_IPS[\'TARGET\']);');
+
+        $this->SetValue('LiveSyncStatus', 'Deaktiviert');
+        $this->SetValue('LiveSyncLastPush', 'Nie');
+        $this->SetValue('LiveSyncReconnects', 0);
+    }
+
+    public function GetCompatibleParents(): string
+    {
+        if (!$this->ReadPropertyBoolean('EnableLiveSync')) {
+            return '{}';
+        }
+
+        return (string) json_encode([
+            'type'      => 'require',
+            'moduleIDs' => [self::WS_CLIENT_MODULE_ID]
+        ]);
     }
 
     public function ApplyChanges(): void
@@ -59,6 +93,10 @@ class MELCloudConnection extends IPSModuleStrict
             $this->SetTimerInterval('UpdateStatus', 0);
             $this->SetTimerInterval('UpdateEnergy', 0);
             $this->SetTimerInterval('UpdateOutdoorTemperature', 0);
+            $this->SetTimerInterval('LiveSyncConfigure', 0);
+            $this->SetTimerInterval('LiveSyncRefresh', 0);
+            $this->SetTimerInterval('LiveSyncMonitor', 0);
+            $this->setLiveSyncStatus('Deaktiviert');
             return;
         }
 
@@ -75,6 +113,91 @@ class MELCloudConnection extends IPSModuleStrict
         $this->SetTimerInterval('UpdateStatus', $statusInterval);
         $this->SetTimerInterval('UpdateEnergy', $energyInterval);
         $this->SetTimerInterval('UpdateOutdoorTemperature', $outdoorTemperatureInterval);
+
+        if ($this->ReadPropertyBoolean('EnableLiveSync')) {
+            // Die Hash-Anforderung läuft bewusst in einem Timer, nicht während
+            // ApplyChanges. So blockiert die Konfigurationsoberfläche nicht.
+            $this->SetTimerInterval('LiveSyncConfigure', 1000);
+            $this->SetTimerInterval('LiveSyncMonitor', 30000);
+            $this->SetTimerInterval('LiveSyncRefresh', 0);
+            $this->setLiveSyncStatus('WebSocket wird eingerichtet');
+        } else {
+            $this->SetTimerInterval('LiveSyncConfigure', 0);
+            $this->SetTimerInterval('LiveSyncRefresh', 0);
+            $this->SetTimerInterval('LiveSyncMonitor', 0);
+            $this->setLiveSyncStatus('Deaktiviert');
+        }
+    }
+
+    /**
+     * Empfängt die einfachen Datenpakete des nativen Symcon-WebSocket-Clients.
+     *
+     * MELCloud-Pushdaten werden absichtlich nicht direkt auf Variablen gemappt.
+     * Jedes gültige JSON-Ereignis startet nur einen debouncten vollständigen
+     * /context-Abruf. Der REST-Poll bleibt unabhängig davon aktiv.
+     */
+    public function ReceiveData(string $JSONString): string
+    {
+        if (!$this->ReadPropertyBoolean('EnableLiveSync')) {
+            return '';
+        }
+
+        $packet = json_decode($JSONString, true);
+        if (!is_array($packet) || ($packet['DataID'] ?? '') !== self::SIMPLE_RX) {
+            return '';
+        }
+
+        $frame = $this->decodeSimpleBuffer($packet['Buffer'] ?? null);
+        if ($frame === '' || !is_array(json_decode($frame, true))) {
+            $this->SendDebug(__FUNCTION__, 'WebSocket-Frame ohne gültiges JSON ignoriert', 0);
+            return '';
+        }
+
+        $now = time();
+        $this->WriteAttributeInteger('LiveSyncLastPushAt', $now);
+        $this->SetValue('LiveSyncLastPush', (new DateTimeImmutable('@' . $now))->setTimezone(new DateTimeZone('Europe/Berlin'))->format(DATE_ATOM));
+        $this->setLiveSyncStatus('Push empfangen');
+        // Debounce: viele Einzel-Frames führen zu höchstens einem /context-Abruf
+        // pro Sekunde. Der nächste Push verschiebt den Abruf erneut um eine Sekunde.
+        $this->SetTimerInterval('LiveSyncRefresh', 1000);
+
+        return '';
+    }
+
+    public function ConfigureLiveSync(): void
+    {
+        if (!$this->ReadPropertyBoolean('EnableLiveSync') || $this->ReadPropertyString('Email') === '' || $this->ReadPropertyString('Password') === '') {
+            $this->SetTimerInterval('LiveSyncConfigure', 0);
+            return;
+        }
+
+        try {
+            $this->configureLiveSyncParent();
+            $this->SetTimerInterval('LiveSyncConfigure', 30 * 60 * 1000);
+        } catch (Exception $e) {
+            $this->setLiveSyncStatus('Polling-Fallback');
+            $this->SendDebug(__FUNCTION__, 'WebSocket-Konfiguration fehlgeschlagen: ' . $e->getMessage(), 0);
+            // Bei einem abgelaufenen Hash oder temporären MELCloud-Fehlern
+            // nicht im Sekundentakt erneut anmelden.
+            $retry = str_contains($e->getMessage(), 'Kein nativer Symcon-WebSocket-Client') ? 10 : 5 * 60;
+            $this->SetTimerInterval('LiveSyncConfigure', $retry * 1000);
+        }
+    }
+
+    public function RefreshLiveSync(): void
+    {
+        $this->SetTimerInterval('LiveSyncRefresh', 0);
+        if ($this->ReadPropertyBoolean('EnableLiveSync')) {
+            $this->UpdateStatus();
+        }
+    }
+
+    public function MonitorLiveSync(): void
+    {
+        if (!$this->ReadPropertyBoolean('EnableLiveSync')) {
+            return;
+        }
+        $this->updateLiveSyncState();
     }
 
     /* -------------------------------------------------------------------------
@@ -235,6 +358,20 @@ class MELCloudConnection extends IPSModuleStrict
      * Pollt den Gerätestatus und verteilt ihn an die Kinder.
      */
     public function UpdateStatus(): void
+    {
+        $semaphore = 'MELCloudConnectionStatus_' . $this->InstanceID;
+        if (!IPS_SemaphoreEnter($semaphore, 1000)) {
+            $this->SendDebug(__FUNCTION__, 'Statusabruf bereits aktiv, dieser Lauf wird übersprungen', 0);
+            return;
+        }
+        try {
+            $this->updateStatusInternal();
+        } finally {
+            IPS_SemaphoreLeave($semaphore);
+        }
+    }
+
+    private function updateStatusInternal(): void
     {
         try {
             $context = $this->fetchContext();
@@ -661,7 +798,7 @@ class MELCloudConnection extends IPSModuleStrict
         $result = [];
         foreach ($data as $key => $value) {
             $lower = strtolower((string) $key);
-            if (in_array($lower, ['email', 'password', 'accesstoken', 'refreshtoken', 'token', 'authorization', 'givendisplayname', 'displayname', 'address', 'firstname', 'lastname', 'username'], true)) {
+            if (in_array($lower, ['email', 'password', 'accesstoken', 'refreshtoken', 'token', 'hash', 'authorization', 'givendisplayname', 'displayname', 'address', 'firstname', 'lastname', 'username'], true)) {
                 $result[$key] = '[redacted]';
             } elseif (is_array($value)) {
                 $result[$key] = $this->redactSensitiveData($value);
@@ -733,6 +870,150 @@ class MELCloudConnection extends IPSModuleStrict
             return !in_array(strtolower(trim($value)), ['false', '0', 'no', ''], true);
         }
         return (bool) $value;
+    }
+
+    private function configureLiveSyncParent(): void
+    {
+        $parentID = $this->getLiveSyncParentID();
+        if ($parentID === 0) {
+            throw new Exception('Kein nativer Symcon-WebSocket-Client als Parent verbunden');
+        }
+
+        $users = 0;
+        foreach (IPS_GetInstanceList() as $instanceID) {
+            if ((int) $instanceID === $this->InstanceID) {
+                continue;
+            }
+            if ((int) (IPS_GetInstance($instanceID)['ConnectionID'] ?? 0) === $parentID) {
+                $users++;
+            }
+        }
+        if ($users > 0) {
+            throw new Exception('WebSocket-Parent wird bereits von einer anderen Instanz verwendet');
+        }
+
+        $hash = $this->fetchWebSocketHash();
+        $url = self::WS_URL . '?hash=' . rawurlencode($hash);
+        $changed = false;
+
+        if ((string) IPS_GetProperty($parentID, 'URL') !== $url) {
+            IPS_SetProperty($parentID, 'URL', $url);
+            $changed = true;
+        }
+        if (!(bool) IPS_GetProperty($parentID, 'VerifyCertificate')) {
+            IPS_SetProperty($parentID, 'VerifyCertificate', true);
+            $changed = true;
+        }
+        if (!(bool) IPS_GetProperty($parentID, 'Active')) {
+            IPS_SetProperty($parentID, 'Active', true);
+            $changed = true;
+        }
+        if ($changed) {
+            IPS_ApplyChanges($parentID);
+        }
+
+        $this->SendDebug(__FUNCTION__, 'WebSocket-URL aktualisiert (Hash-Länge ' . strlen($hash) . ')', 0);
+        $this->updateLiveSyncState();
+    }
+
+    private function fetchWebSocketHash(): string
+    {
+        $token = $this->getAccessToken();
+        if ($token === '') {
+            throw new Exception('Keine gültige Anmeldung für den WebSocket-Hash');
+        }
+
+        $headers = [
+            'Authorization: Bearer ' . $token,
+            'Accept: application/json',
+            'User-Agent: ' . self::USER_AGENT
+        ];
+        [$status, $response] = $this->httpRequest('GET', self::WS_TOKEN_URL, $headers);
+
+        if ($status === 401) {
+            $token = $this->getAccessToken(true);
+            if ($token === '') {
+                throw new Exception('WebSocket-Hash abgelehnt (HTTP 401)');
+            }
+            $headers[0] = 'Authorization: Bearer ' . $token;
+            [$status, $response] = $this->httpRequest('GET', self::WS_TOKEN_URL, $headers);
+        }
+
+        if ($status === 429) {
+            throw new Exception('WebSocket-Hash Rate-Limit erreicht (HTTP 429)');
+        }
+        if ($status >= 500) {
+            throw new Exception('MELCloud-Serverfehler beim WebSocket-Hash (HTTP ' . $status . ')');
+        }
+        if ($status < 200 || $status >= 300) {
+            throw new Exception('WebSocket-Hash fehlgeschlagen (HTTP ' . $status . ')');
+        }
+
+        $data = json_decode($response, true);
+        $hash = is_array($data) ? (string) ($data['hash'] ?? '') : '';
+        if ($hash === '') {
+            throw new Exception('WebSocket-Hash fehlt in der Serverantwort');
+        }
+        return $hash;
+    }
+
+    private function getLiveSyncParentID(): int
+    {
+        $instance = IPS_GetInstance($this->InstanceID);
+        $parentID = (int) ($instance['ConnectionID'] ?? 0);
+        if ($parentID <= 0) {
+            return 0;
+        }
+
+        $parent = IPS_GetInstance($parentID);
+        return (($parent['ModuleInfo']['ModuleID'] ?? '') === self::WS_CLIENT_MODULE_ID) ? $parentID : 0;
+    }
+
+    private function updateLiveSyncState(): void
+    {
+        if (!$this->ReadPropertyBoolean('EnableLiveSync')) {
+            $this->setLiveSyncStatus('Deaktiviert');
+            return;
+        }
+
+        $parentID = $this->getLiveSyncParentID();
+        if ($parentID === 0) {
+            $this->setLiveSyncStatus('Polling-Fallback');
+            return;
+        }
+
+        $status = (int) (IPS_GetInstance($parentID)['InstanceStatus'] ?? 0);
+        $previousStatus = $this->ReadAttributeInteger('LiveSyncParentStatus');
+        if ($previousStatus !== 0 && $previousStatus !== 102 && $status === 102) {
+            $reconnects = $this->ReadAttributeInteger('LiveSyncReconnectCount') + 1;
+            $this->WriteAttributeInteger('LiveSyncReconnectCount', $reconnects);
+            $this->SetValue('LiveSyncReconnects', $reconnects);
+        }
+        $this->WriteAttributeInteger('LiveSyncParentStatus', $status);
+
+        $this->setLiveSyncStatus($status === 102 ? 'WebSocket verbunden' : 'Polling-Fallback');
+    }
+
+    private function setLiveSyncStatus(string $status): void
+    {
+        $this->SetValue('LiveSyncStatus', $status);
+    }
+
+    private function decodeSimpleBuffer(mixed $buffer): string
+    {
+        if (!is_string($buffer) || $buffer === '') {
+            return '';
+        }
+
+        // IPSModuleStrict nutzt bei Datenflüssen HEX. Ältere/native I/O-Varianten
+        // liefern den Buffer dagegen direkt als UTF-8. Beide Formen werden akzeptiert.
+        if ((strlen($buffer) % 2) === 0 && preg_match('/^[0-9a-f]+$/i', $buffer) === 1) {
+            $decoded = hex2bin($buffer);
+            if ($decoded !== false && is_array(json_decode($decoded, true))) {
+                return $decoded;
+            }
+        }
+        return $buffer;
     }
 
     /**
